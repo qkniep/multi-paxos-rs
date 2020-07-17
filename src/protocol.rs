@@ -348,3 +348,32 @@ impl PaxosInstance {
         }
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+    use std::{io, time::Duration};
+    use super::*;
+
+    struct NetworkNodeStub;
+
+    impl NetworkNode for NetworkNodeStub {
+        fn new(addr: usize) -> io::Result<Self> {
+            Ok(NetworkNodeStub)
+        }
+
+        fn recv(&self, timeout: Duration) -> io::Result<(usize, Command)> {
+            Ok((0, Command::Relay(Vec::new())))
+        }
+
+        fn broadcast(&self, msg: Command) {}
+        fn send(&self, dst: usize, msg: Command) -> bool { false }
+    }
+
+    #[test]
+    fn accepted_values() {
+        let node = NetworkNodeStub::new(0);
+        assert!(node.is_ok());
+        PaxosServer::new(node.unwrap(), 0, 1);
+    }
+}

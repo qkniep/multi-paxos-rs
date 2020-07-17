@@ -11,6 +11,8 @@ matrix:
   allow_failures:
     - rust: nightly
 
+cache: cargo
+
 before_install:
   - sudo apt-get update
 
