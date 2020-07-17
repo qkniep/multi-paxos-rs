@@ -54,6 +54,6 @@ impl NetworkNode for UdpNetworkNode {
             .socket
             .send_to(&serialized, ("127.0.0.1", 64000 + dst as u16))
             .unwrap();
-        return true;
+        true
     }
 }

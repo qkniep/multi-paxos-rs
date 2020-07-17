@@ -1,12 +1,7 @@
 // Copyright (C) 2020 Quentin M. Kniep <hello@quentinkniep.com>
 // Distributed under terms of the MIT license.
 
-use std::{
-    env::args,
-    fs, io,
-    thread::sleep,
-    time::Duration,
-};
+use std::{env::args, fs, io, thread::sleep, time::Duration};
 
 use serde::{Deserialize, Serialize};
 use tracing::Level;

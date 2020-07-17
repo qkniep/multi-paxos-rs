@@ -31,7 +31,6 @@ pub fn submit_value<T: Serialize>(value: &T) {
     node.send(0, Command::Relay(serialized_value));
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

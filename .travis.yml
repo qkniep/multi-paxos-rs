@@ -15,8 +15,6 @@ cache: cargo
 
 before_install:
   - sudo apt-get update
-  - cargo install cargo-kcov
-  - cargo kcov --print-install-kcov-sh | sh
 
 addons:
   apt:
@@ -28,9 +26,14 @@ addons:
       - gcc
       - binutils-dev
 
+before_script: |
+  if [[ "$TRAVIS_RUST_VERSION" == stable ]]; then
+    cargo install cargo-tarpaulin
+  fi
+
 after_success: |
   if [[ "$TRAVIS_OS_NAME" == "linux" && "$TRAVIS_RUST_VERSION" == "stable" ]]; then
-    cargo kcov --lib -v
+    cargo tarpaulin --out Xml --lib -v
     bash <(curl -s https://codecov.io/bash) &&
     echo "Uploaded code coverage"
   fi

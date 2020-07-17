@@ -270,8 +270,7 @@ impl<N: NetworkNode> PaxosServer<N> {
         if self.node_id == self.current_leader {
             debug!("Handling client request: {:?}", cmd);
             let value = cmd;
-            self.log
-                .push(PaxosInstance::new_with_value(value.clone()));
+            self.log.push(PaxosInstance::new_with_value(value.clone()));
             self.node.broadcast(Command::Propose {
                 instance: self.log.len() - 1,
                 id: self.current_id,
@@ -349,31 +348,33 @@ impl PaxosInstance {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use std::{io, time::Duration};
     use super::*;
+    use std::{io, time::Duration};
 
     struct NetworkNodeStub;
 
     impl NetworkNode for NetworkNodeStub {
-        fn new(addr: usize) -> io::Result<Self> {
+        fn new(_addr: usize) -> io::Result<Self> {
             Ok(NetworkNodeStub)
         }
 
-        fn recv(&self, timeout: Duration) -> io::Result<(usize, Command)> {
+        fn recv(&self, _timeout: Duration) -> io::Result<(usize, Command)> {
             Ok((0, Command::Relay(Vec::new())))
         }
 
-        fn broadcast(&self, msg: Command) {}
-        fn send(&self, dst: usize, msg: Command) -> bool { false }
+        fn broadcast(&self, _msg: Command) {}
+        fn send(&self, _dst: usize, _msg: Command) -> bool {
+            false
+        }
     }
 
     #[test]
     fn accepted_values() {
         let node = NetworkNodeStub::new(0);
         assert!(node.is_ok());
-        PaxosServer::new(node.unwrap(), 0, 1);
+        let paxos = PaxosServer::new(node.unwrap(), 0, 1);
+        assert_eq!(paxos.get_accepted_values_iter().next(), None);
     }
 }
