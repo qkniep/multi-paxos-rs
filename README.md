@@ -9,14 +9,14 @@ I do the project for fun, it is not intended for production use!
 
 # Roadmap
 
-[ ] random failure testing
-[ ] liveness recovery after failures testing
-[ ] handle NACKs
-[ ] runtime consistency checks (checksum pushed into the log by leader)
-[ ] persistent storage of log
-[ ] checksums on stored data
-[ ] group membership changes
-[ ] snapshot support
+- [ ] random failure testing
+- [ ] liveness recovery after failures testing
+- [ ] handle NACKs
+- [ ] runtime consistency checks (checksum pushed into the log by leader)
+- [ ] persistent storage of log
+- [ ] checksums on stored data
+- [ ] group membership changes
+- [ ] snapshot support
 
 # References
 
