@@ -15,7 +15,7 @@ cache: cargo
 
 before_install:
   - sudo apt-get update
-  - cargo install kcov
+  - cargo install cargo-kcov
   - cargo kcov --print-install-kcov-sh | sh
 
 addons:
