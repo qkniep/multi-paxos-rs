@@ -30,3 +30,23 @@ pub fn submit_value<T: Serialize>(value: &T) {
     let serialized_value: Vec<u8> = serialize(value).unwrap();
     node.send(0, Command::Relay(serialized_value));
 }
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn start_replica_test() {
+        assert!(start_replica(0, 2).is_ok());
+        assert!(start_replica(0, 2).is_err());
+        assert!(start_replica(1, 2).is_ok());
+    }
+
+    #[test]
+    fn submit_value_test() {
+        start_replica(3, 2).ok();
+        start_replica(4, 2).ok();
+        submit_value(&"Hello".to_string());
+    }
+}
