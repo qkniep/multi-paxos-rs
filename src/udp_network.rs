@@ -1,10 +1,16 @@
 // Copyright (C) 2020 Quentin M. Kniep <hello@quentinkniep.com>
 // Distributed under terms of the MIT license.
 
-use std::{io, net::UdpSocket, time::Duration};
+use std::collections::HashMap;
+use std::{
+    io,
+    net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
+    time::Duration,
+};
 
 use bincode::{deserialize, serialize};
 // use crc32fast::Hasher;
+use rand::prelude::*;
 
 use crate::network::NetworkNode;
 use crate::protocol::Command;
@@ -14,20 +20,27 @@ const MAX_SZ: usize = 64 * 1024;
 /// A network node that uses UDP and bincode for sending messages.
 pub struct UdpNetworkNode {
     pub socket: UdpSocket,
-    pub peers: Vec<usize>,
+    pub peers: HashMap<SocketAddr, usize>,
 }
 
 impl NetworkNode for UdpNetworkNode {
-    /// Creates a new UdpTransport.
-    fn new(addr: usize) -> io::Result<Self> {
-        let socket = UdpSocket::bind(("127.0.0.1", 64000 + addr as u16))?;
-        Ok(Self {
-            socket,
-            peers: Vec::new(),
-        })
+    type Addr = SocketAddr;
+
+    /// Creates a new UdpNetworkNode.
+    fn new() -> Self {
+        loop {
+            let port = rand::thread_rng().gen_range(1024, 65535);
+            if let Ok(socket) = UdpSocket::bind(("127.0.0.1", port)) {
+                return Self {
+                    socket,
+                    peers: HashMap::new(),
+                };
+            }
+        }
     }
 
     /// Blocks until the next message is received.
+    /// If this takes longer than timeout an io::Error is returned instead.
     fn recv(&self, timeout: Duration) -> io::Result<(usize, Command)> {
         self.socket
             .set_read_timeout(Some(timeout))
@@ -37,23 +50,57 @@ impl NetworkNode for UdpNetworkNode {
         let (n, from) = self.socket.recv_from(&mut buf)?;
 
         let cmd: Command = deserialize(&buf[..n]).unwrap();
-        Ok(((from.port() - 64000) as usize, cmd))
+        Ok((Self::addr_to_node_id(from).unwrap(), cmd))
     }
 
+    /// Sends the paxos message to all other replicas.
     fn broadcast(&self, cmd: Command) {
-        for &addr in &self.peers {
+        for &addr in self.peers.values() {
             self.send(addr, cmd.clone());
         }
     }
 
-    /// Enqueues the message to be sent. May be sent 0-N times with no ordering guarantees.
+    /// Sends the paxos message to another replica.
     fn send(&self, dst: usize, cmd: Command) -> bool {
         let serialized = serialize(&cmd).unwrap();
         assert!(serialized.len() <= MAX_SZ);
-        let _n = self
-            .socket
-            .send_to(&serialized, ("127.0.0.1", 64000 + dst as u16))
-            .unwrap();
-        true
+        self.socket
+            .send_to(&serialized, Self::node_id_to_addr(dst))
+            .is_ok()
+    }
+
+    fn id(&self) -> usize {
+        Self::addr_to_node_id(self.socket.local_addr().unwrap()).unwrap()
+    }
+
+    fn addr_to_node_id(addr: SocketAddr) -> Option<usize> {
+        let port = addr.port();
+        if let IpAddr::V4(ip) = addr.ip() {
+            let ipv4: u32 = ip.into();
+            Some(ipv4 as usize * 65536 + port as usize)
+        } else {
+            None
+        }
+    }
+
+    fn node_id_to_addr(node_id: usize) -> SocketAddr {
+        let port = (node_id % 65536) as u16;
+        let ip = (node_id / 65536) as u32;
+        SocketAddr::from((Ipv4Addr::from(ip), port))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn node_id_addr_conversion(ip: u32, port: u16) {
+            let addr = SocketAddr::from((Ipv4Addr::from(ip), port));
+            assert_eq!(UdpNetworkNode::node_id_to_addr(UdpNetworkNode::addr_to_node_id(addr).unwrap()), addr);
+        }
     }
 }

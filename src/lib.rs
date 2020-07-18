@@ -1,9 +1,8 @@
 // Copyright (C) 2020 Quentin M. Kniep <hello@quentinkniep.com>
 // Distributed under terms of the MIT license.
 
-//! Implementation of the Multi-Paxos consensus protocol for an example banking application.
+//! Implementation of a replicated log using the Multi-Paxos consensus protocol.
 
-use std::io;
 use std::thread;
 
 use bincode::serialize;
@@ -17,16 +16,14 @@ mod network;
 mod protocol;
 mod udp_network;
 
-pub fn start_replica(address: usize, group_size: usize) -> io::Result<()> {
-    let mut node = UdpNetworkNode::new(address)?;
-    node.peers = (0..group_size).collect();
-    thread::spawn(move || PaxosServer::new(node, address, group_size).run());
-
-    Ok(())
+pub fn start_replica(group_size: usize) {
+    let node = UdpNetworkNode::new();
+    let node_id = node.id();
+    thread::spawn(move || PaxosServer::new(node, node_id, group_size).run());
 }
 
 pub fn submit_value<T: Serialize>(value: &T) {
-    let node = UdpNetworkNode::new(99).unwrap();
+    let node = UdpNetworkNode::new();
     let serialized_value: Vec<u8> = serialize(value).unwrap();
     node.send(0, Command::Relay(serialized_value));
 }
@@ -35,17 +32,36 @@ pub fn submit_value<T: Serialize>(value: &T) {
 mod tests {
     use super::*;
 
+    use proptest::prelude::*;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(25))]
+
+        #[test]
+        fn random_start_replica_test(group_size in 1..50usize) {
+            for _ in 0..group_size {
+                start_replica(group_size);
+            }
+        }
+        #[test]
+        fn submit_random_value_test(s in "\\PC*{1,128}") {
+            start_replica(2);
+            submit_value(&s);
+        }
+    }
+
     #[test]
     fn start_replica_test() {
-        assert!(start_replica(0, 2).is_ok());
-        assert!(start_replica(0, 2).is_err());
-        assert!(start_replica(1, 2).is_ok());
+        start_replica(3);
+        start_replica(3);
+        start_replica(3);
     }
 
     #[test]
     fn submit_value_test() {
-        start_replica(3, 2).ok();
-        start_replica(4, 2).ok();
-        submit_value(&"Hello".to_string());
+        start_replica(2);
+        start_replica(2);
+        submit_value(&"Hello");
+        submit_value(&"aAௗ0㌀0");
     }
 }

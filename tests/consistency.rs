@@ -3,9 +3,13 @@
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn random_behaviour() {
-        paxos::start_replica(0, 2).ok();
-        paxos::start_replica(1, 2).ok();
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn random_behaviour(_a in 0..1) {
+            paxos::start_replica(2);
+            paxos::start_replica(2);
+        }
     }
 }

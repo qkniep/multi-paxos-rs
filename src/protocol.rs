@@ -356,8 +356,10 @@ mod tests {
     struct NetworkNodeStub;
 
     impl NetworkNode for NetworkNodeStub {
-        fn new(_addr: usize) -> io::Result<Self> {
-            Ok(NetworkNodeStub)
+        type Addr = usize;
+
+        fn new() -> Self {
+            NetworkNodeStub
         }
 
         fn recv(&self, _timeout: Duration) -> io::Result<(usize, Command)> {
@@ -368,13 +370,20 @@ mod tests {
         fn send(&self, _dst: usize, _msg: Command) -> bool {
             false
         }
+
+        fn id(&self) -> usize { 0 }
+        fn addr_to_node_id(addr: Self::Addr) -> Option<usize> {
+            Some(addr)
+        }
+        fn node_id_to_addr(node_id: usize) -> Self::Addr {
+            node_id
+        }
     }
 
     #[test]
     fn accepted_values() {
-        let node = NetworkNodeStub::new(0);
-        assert!(node.is_ok());
-        let paxos = PaxosServer::new(node.unwrap(), 0, 1);
+        let node = NetworkNodeStub::new();
+        let paxos = PaxosServer::new(node, 0, 1);
         assert_eq!(paxos.get_accepted_values_iter().next(), None);
     }
 }

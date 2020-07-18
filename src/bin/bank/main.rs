@@ -32,7 +32,7 @@ pub fn setup_offices(office_count: usize, log_path: &str) -> io::Result<()> {
 
     // create various network nodes and start them
     for address in 0..office_count {
-        paxos::start_replica(address, office_count)?;
+        paxos::start_replica(office_count);
     }
 
     Ok(())
