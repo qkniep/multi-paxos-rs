@@ -44,7 +44,7 @@ pub enum Command {
         instance: usize,
     },
     Relay(Value),
-    // Configuration changes:
+    // TODO: Configuration changes:
     // Join,
     // Leave,
 }

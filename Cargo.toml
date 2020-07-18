@@ -12,7 +12,8 @@ keywords = ["paxos", "multi-paxos", "consensus", "distributed-systems", "replica
 categories = ["algorithms", "database-implementations"]
 
 [dependencies]
-bincode = "1.3"
+bincode = "1"
+clap = "2"
 rand = "0.7"
 rand_distr = "0.2"
 serde = { version = "1.0", features = ["derive"] }
@@ -25,8 +26,8 @@ features = ["fmt", "ansi", "chrono"]
 
 [dev-dependencies]
 criterion = "0.3"
-proptest = "0.10.0"
-stateright = "0.10.1"
+proptest = "0.10"
+stateright = "0.10"
 
 [[bench]]
 name = "main"

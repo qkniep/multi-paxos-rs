@@ -31,7 +31,7 @@ pub fn setup_offices(office_count: usize, log_path: &str) -> io::Result<()> {
     fs::create_dir_all(log_path)?;
 
     // create various network nodes and start them
-    for address in 0..office_count {
+    for _address in 0..office_count {
         paxos::start_replica(office_count);
     }
 
