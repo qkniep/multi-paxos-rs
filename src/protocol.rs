@@ -112,7 +112,7 @@ impl<N: NetworkNode> PaxosServer<N> {
     }
 
     pub fn run(&mut self) {
-        // configure a span to associate log-entries with this network node
+        // Span to associate log-entries with this network node
         let _guard = trace_span!("NetworkNode", id = self.node_id);
         let _guard = _guard.enter();
 
@@ -371,7 +371,9 @@ mod tests {
             false
         }
 
-        fn id(&self) -> usize { 0 }
+        fn id(&self) -> usize {
+            0
+        }
         fn addr_to_node_id(addr: Self::Addr) -> Option<usize> {
             Some(addr)
         }

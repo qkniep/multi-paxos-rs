@@ -1,7 +1,7 @@
 // Copyright (C) 2020 Quentin M. Kniep <hello@quentinkniep.com>
 // Distributed under terms of the MIT license.
 
-use std::{env::args, fs, io, thread::sleep, time::Duration};
+use std::{io, thread::sleep, time::Duration};
 
 use serde::{Deserialize, Serialize};
 use tracing::Level;
@@ -27,9 +27,7 @@ pub enum ClientCommand {
 }
 
 /// Creates and connects a number of branch offices for the bank.
-pub fn setup_offices(office_count: usize, log_path: &str) -> io::Result<()> {
-    fs::create_dir_all(log_path)?;
-
+pub fn setup_offices(office_count: usize) -> io::Result<()> {
     // create various network nodes and start them
     for _address in 0..office_count {
         paxos::start_replica(office_count);
@@ -40,7 +38,6 @@ pub fn setup_offices(office_count: usize, log_path: &str) -> io::Result<()> {
 
 fn main() -> io::Result<()> {
     use tracing_subscriber::{fmt::time::ChronoLocal, FmtSubscriber};
-    let log_path = args().nth(1).unwrap_or_else(|| "logs".to_string());
 
     // initialize the tracer
     FmtSubscriber::builder()
@@ -49,7 +46,7 @@ fn main() -> io::Result<()> {
         .init();
 
     // create and connect a number of offices
-    let _channels = setup_offices(6, &log_path)?;
+    let _channels = setup_offices(6)?;
 
     paxos::submit_value(&ClientCommand::Open {
         account: "Peter".to_string(),

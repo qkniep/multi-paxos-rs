@@ -13,7 +13,8 @@ fn main() {
         (@arg GROUP_SIZE: +required "Sets the current paxos group size")
         (@arg host: -h --host +takes_value "Sets the network interface")
         (@arg port: -p --port +takes_value "Sets the port")
-    ).get_matches();
+    )
+    .get_matches();
 
     let host = matches.value_of("host").unwrap_or("127.0.0.1");
     let port = value_t!(matches, "port", u16).unwrap_or(0);
