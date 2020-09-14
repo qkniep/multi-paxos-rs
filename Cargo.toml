@@ -27,7 +27,7 @@ features = ["fmt", "ansi", "chrono"]
 [dev-dependencies]
 criterion = "0.3"
 proptest = "0.10"
-stateright = "0.13"
+stateright = "0.14"
 
 [[bench]]
 name = "main"
