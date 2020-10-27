@@ -16,11 +16,11 @@ bincode = "1"
 clap = "2"
 rand = "0.7"
 rand_distr = "0.3"
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
 tracing = { version = "0.1", features = ["release_max_level_info"] }
 
 [dependencies.tracing-subscriber]
-version = "0.2.7"
+version = "0.2"
 default-features = false
 features = ["fmt", "ansi", "chrono"]
 

@@ -15,14 +15,15 @@ TBA, the API is not fixed yet.
 # Roadmap
 
 - [ ] random failure testing
-- [ ] specify library API
 - [ ] liveness recovery after failures testing
-- [ ] handle NACKs
-- [ ] runtime consistency checks (checksum pushed into the log by leader)
 - [ ] persistent storage of log
-- [ ] checksums on stored data
+- [ ] handle NACKs
+- [ ] specify library API
+- [ ] benchmarking
 - [ ] group membership changes
 - [ ] snapshot support
+- [ ] runtime consistency checks (checksum pushed into the log by leader)
+- [ ] checksums on stored data
 
 # References
 
