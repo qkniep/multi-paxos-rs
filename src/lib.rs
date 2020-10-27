@@ -66,16 +66,14 @@ mod tests {
         }
         #[test]
         fn submit_random_value_test(s in "\\PC*{1,128}") {
-            let node = start_replica(2);
-            submit_value(node, &s);
+            let nodes = start_replicas(3);
+            submit_value(nodes[0], &s);
         }
     }
 
     #[test]
-    fn start_replica_test() {
-        start_replica(3);
-        start_replica(3);
-        start_replica(3);
+    fn start_replicas_test() {
+        start_replicas(3);
     }
 
     #[test]
