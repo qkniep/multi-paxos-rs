@@ -51,9 +51,9 @@ fn main() -> io::Result<()> {
     // create and connect a number of offices
     let _channels = setup_offices(6, &log_path)?;
 
-    paxos::submit_value(&ClientCommand::Open {
-        account: "Peter".to_string(),
-    });
+    // paxos::submit_value(&ClientCommand::Open {
+    //     account: "Peter".to_string(),
+    // });
 
     sleep(Duration::new(2, 0));
 

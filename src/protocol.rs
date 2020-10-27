@@ -1,7 +1,7 @@
 // Copyright (C) 2020 Quentin M. Kniep <hello@quentinkniep.com>
 // Distributed under terms of the MIT license.
 
-//! Contains the network-message-types for the consensus protocol and banking application.
+//! Contains the network-message-types for the Paxos consensus protocol.
 
 use std::fmt::Debug;
 use std::time::Duration;
@@ -15,7 +15,7 @@ use crate::network::NetworkNode;
 type Value = Vec<u8>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum Command {
+pub enum PaxosMsg {
     Prepare {
         id: ProposalID,
         holes: Vec<usize>,
@@ -24,32 +24,37 @@ pub enum Command {
         id: ProposalID,
         accepted: Vec<(usize, ProposalID, Value)>,
     },
+
     Propose {
         id: ProposalID,
         instance: usize,
         value: Value,
     },
-    Accepted {
+    Accept {
         id: ProposalID,
         instance: usize,
     },
+
     Learn {
         id: ProposalID,
         instance: usize,
         value: Value,
     },
+
     /// Currently only used for rejecting Proposals.
     Nack {
         id: ProposalID,
         instance: usize,
     },
+
     Relay(Value),
+
     // TODO: Configuration changes:
     // Join,
     // Leave,
 }
 
-/// Unique ID
+/// Unique monotonically-increasing ID
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd, Eq, Ord, Serialize, Deserialize)]
 pub struct ProposalID(usize, usize);
 
@@ -61,7 +66,7 @@ impl ProposalID {
 
 type Promise<V> = Vec<(usize, ProposalID, V)>;
 
-/// Handles all paxos related state for a single node,
+/// Handles all Paxos related state for a single node,
 /// acting as proposer, acceptor and learner.
 #[derive(Debug)]
 pub struct PaxosServer<N> {
@@ -86,7 +91,7 @@ struct PaxosInstance {
 }
 
 impl<N: NetworkNode> PaxosServer<N> {
-    /// Starts a new Paxos server.
+    /// Creates a new Paxos server.
     ///
     /// # Arguments
     ///
@@ -111,13 +116,15 @@ impl<N: NetworkNode> PaxosServer<N> {
         }
     }
 
+    /// Runs this Paxos server's main loop.
     pub fn run(&mut self) {
         // configure a span to associate log-entries with this network node
-        let _guard = trace_span!("NetworkNode", id = self.node_id);
-        let _guard = _guard.enter();
+        let tracing_span = trace_span!("NetworkNode", self.node_id);
+        let _guard = tracing_span.enter();
+        info!("Starting Paxos Node with ID {}", self.node_id);
 
         loop {
-            // Event Loop for incoming messages
+            // event loop for incoming messages
             while let Ok(msg) = self.node.recv(Duration::from_millis(1000)) {
                 let (src, cmd) = msg;
                 self.handle_paxos_message(src, cmd);
@@ -129,23 +136,23 @@ impl<N: NetworkNode> PaxosServer<N> {
     }
 
     /// Parses the message and calls the method corresponding to the message type.
-    fn handle_paxos_message(&mut self, src: usize, cmd: Command) {
+    fn handle_paxos_message(&mut self, src: usize, cmd: PaxosMsg) {
         match cmd {
-            Command::Prepare { id, holes } => self.handle_prepare(src, id, holes),
-            Command::Promise { id, accepted } => self.handle_promise(id, accepted),
-            Command::Propose {
+            PaxosMsg::Prepare { id, holes } => self.handle_prepare(src, id, holes),
+            PaxosMsg::Promise { id, accepted } => self.handle_promise(id, accepted),
+            PaxosMsg::Propose {
                 id,
                 instance,
                 value,
             } => self.handle_propose(src, id, instance, value),
-            Command::Accepted { id, instance } => self.handle_accept(id, instance),
-            Command::Learn {
+            PaxosMsg::Accept { id, instance } => self.handle_accept(id, instance),
+            PaxosMsg::Learn {
                 id,
                 instance,
                 value,
             } => self.handle_learn(id, instance, value),
-            Command::Nack { id, instance } => self.handle_nack(id, instance),
-            Command::Relay(value) => self.handle_customer_request(value),
+            PaxosMsg::Nack { id, instance } => self.handle_nack(id, instance),
+            PaxosMsg::Relay(value) => self.handle_client_request(value),
         }
     }
 
@@ -156,8 +163,10 @@ impl<N: NetworkNode> PaxosServer<N> {
             warn!("Prepare rejected: {:?}<{:?}", id, self.highest_promised);
             return;
         }
+
         debug!("Promise vote: {:?}", id);
         self.highest_promised = id;
+        self.current_leader = src;
 
         // Fills accepted_values with all values this node has accepted and
         // the sender of the Prepare has marked as not yet known to be chosen (in holes).
@@ -173,7 +182,7 @@ impl<N: NetworkNode> PaxosServer<N> {
             }
         }
 
-        let promise = Command::Promise {
+        let promise = PaxosMsg::Promise {
             id,
             accepted: accepted_values,
         };
@@ -186,8 +195,10 @@ impl<N: NetworkNode> PaxosServer<N> {
             warn!("Promise rejected: {:?}!={:?}", id, self.current_id);
             return;
         }
+
         debug!("Got a promise: {:?}, {:?}", id, accepted);
         self.promises.push((id, accepted)); // TODO: Remove promises w/ old id before counting.
+
         if self.promises.len() == self.majority {
             info!("Got elected.");
             self.current_leader = self.current_id.1;
@@ -196,7 +207,7 @@ impl<N: NetworkNode> PaxosServer<N> {
                 .enumerate()
                 .filter(|(_, instance)| !instance.chosen)
             {
-                self.node.broadcast(Command::Propose {
+                self.node.broadcast(PaxosMsg::Propose {
                     instance: i,
                     id,
                     value: instance.value.as_ref().unwrap().clone(),
@@ -209,14 +220,16 @@ impl<N: NetworkNode> PaxosServer<N> {
     fn handle_propose(&mut self, src: usize, id: ProposalID, instance: usize, value: Value) {
         if id < self.highest_promised {
             warn!("Proposal rejected: {:?}", value);
-            self.node.send(src, Command::Nack { instance, id });
+            self.node.send(src, PaxosMsg::Nack { instance, id });
             return;
         }
+
         trace!("Proposal accepted: {:?}", value);
+        self.current_leader = src;
         while instance >= self.log.len() {
             self.log.push(PaxosInstance::new());
         }
-        self.node.send(src, Command::Accepted { instance, id });
+        self.node.send(src, PaxosMsg::Accept { instance, id });
         self.log[instance].value = Some(value);
         self.log[instance].accepted_id = id;
     }
@@ -225,7 +238,7 @@ impl<N: NetworkNode> PaxosServer<N> {
     fn handle_accept(&mut self, id: ProposalID, instance: usize) {
         if id != self.current_id {
             warn!(
-                "Acceptance rejected: [{}]: {:?}!={:?}",
+                "Accept rejected: [{}]: {:?}!={:?}",
                 instance, id, self.current_id
             );
             return;
@@ -238,7 +251,7 @@ impl<N: NetworkNode> PaxosServer<N> {
             );
             let value = self.log[instance].value.clone().unwrap();
             info!("Value was chosen: [{}]: {:?}, {:?}", instance, id, value);
-            self.node.broadcast(Command::Learn {
+            self.node.broadcast(PaxosMsg::Learn {
                 instance,
                 id,
                 value,
@@ -264,14 +277,14 @@ impl<N: NetworkNode> PaxosServer<N> {
         // TODO: clean state for request #id
     }
 
-    /// Handles a client request.
-    /// Relays the request to the current leader.
-    fn handle_customer_request(&mut self, cmd: Value) {
+    /// Handles a client request directly if this server believes itself ot be the leader.
+    /// Relays the request to the current leader otherwise.
+    fn handle_client_request(&mut self, cmd: Value) {
         if self.node_id == self.current_leader {
             debug!("Handling client request: {:?}", cmd);
             let value = cmd;
             self.log.push(PaxosInstance::new_with_value(value.clone()));
-            self.node.broadcast(Command::Propose {
+            self.node.broadcast(PaxosMsg::Propose {
                 instance: self.log.len() - 1,
                 id: self.current_id,
                 value,
@@ -280,14 +293,15 @@ impl<N: NetworkNode> PaxosServer<N> {
             trace!("Received a client request. Relaying to leader.");
             if !self
                 .node
-                .send(self.current_leader, Command::Relay(cmd.clone()))
+                .send(self.current_leader, PaxosMsg::Relay(cmd.clone()))
             {
-                warn!("Relaying command to leader failed!");
+                error!("Relaying command to leader failed!");
                 self.client_cmd_queue.push(cmd);
             }
         }
     }
 
+    /// Initiates a new election (Prepare/Promise sequence).
     fn start_election(&mut self) {
         info!("Starting election.");
         self.current_id.increment();
@@ -305,9 +319,9 @@ impl<N: NetworkNode> PaxosServer<N> {
             .map(|(index, _)| index)
             .collect();
         holes.push(self.log.len());
-        debug!("Mising values: {:?}", holes);
+        debug!("Missing values: {:?}", holes);
 
-        self.node.broadcast(Command::Prepare {
+        self.node.broadcast(PaxosMsg::Prepare {
             id: self.current_id,
             holes,
         });
@@ -362,16 +376,20 @@ mod tests {
             NetworkNodeStub
         }
 
-        fn recv(&self, _timeout: Duration) -> io::Result<(usize, Command)> {
-            Ok((0, Command::Relay(Vec::new())))
+        fn discover(&mut self, _other_node: usize) {}
+
+        fn recv(&self, _timeout: Duration) -> io::Result<(usize, PaxosMsg)> {
+            Ok((0, PaxosMsg::Relay(Vec::new())))
         }
 
-        fn broadcast(&self, _msg: Command) {}
-        fn send(&self, _dst: usize, _msg: Command) -> bool {
+        fn broadcast(&self, _msg: PaxosMsg) {}
+        fn send(&self, _dst: usize, _msg: PaxosMsg) -> bool {
             false
         }
 
-        fn id(&self) -> usize { 0 }
+        fn id(&self) -> usize {
+            0
+        }
         fn addr_to_node_id(addr: Self::Addr) -> Option<usize> {
             Some(addr)
         }

@@ -3,7 +3,7 @@
 use std::io;
 use std::time::Duration;
 
-use crate::protocol::Command;
+use crate::protocol::PaxosMsg;
 
 pub trait NetworkNode: Sized {
     type Addr;
@@ -11,15 +11,17 @@ pub trait NetworkNode: Sized {
     /// Creates a new network node.
     fn new() -> Self;
 
+    fn discover(&mut self, other_node: usize);
+
     /// Receives a message from any of this node's peers.
     /// Returns `io::Error` if no message is received within timeout.
-    fn recv(&self, timeout: Duration) -> io::Result<(usize, Command)>;
+    fn recv(&self, timeout: Duration) -> io::Result<(usize, PaxosMsg)>;
 
-    fn broadcast(&self, msg: Command);
+    fn broadcast(&self, msg: PaxosMsg);
 
     /// Tries to send the message to the peer with ID dst.
     /// Returns `true` on success `false` on failure.
-    fn send(&self, dst: usize, msg: Command) -> bool;
+    fn send(&self, dst: usize, msg: PaxosMsg) -> bool;
 
     fn id(&self) -> usize;
 

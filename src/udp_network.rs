@@ -1,7 +1,7 @@
 // Copyright (C) 2020 Quentin M. Kniep <hello@quentinkniep.com>
 // Distributed under terms of the MIT license.
 
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::{
     io,
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
@@ -9,18 +9,17 @@ use std::{
 };
 
 use bincode::{deserialize, serialize};
-// use crc32fast::Hasher;
 use rand::prelude::*;
 
 use crate::network::NetworkNode;
-use crate::protocol::Command;
+use crate::protocol::PaxosMsg;
 
-const MAX_SZ: usize = 64 * 1024;
+const MAX_MSG_SIZE: usize = 64 * 1024;
 
 /// A network node that uses UDP and bincode for sending messages.
 pub struct UdpNetworkNode {
     pub socket: UdpSocket,
-    pub peers: HashMap<SocketAddr, usize>,
+    pub peers: HashSet<usize>,
 }
 
 impl NetworkNode for UdpNetworkNode {
@@ -33,37 +32,41 @@ impl NetworkNode for UdpNetworkNode {
             if let Ok(socket) = UdpSocket::bind(("127.0.0.1", port)) {
                 return Self {
                     socket,
-                    peers: HashMap::new(),
+                    peers: HashSet::new(),
                 };
             }
         }
     }
 
+    fn discover(&mut self, other_node: usize) {
+        self.peers.insert(other_node);
+    }
+
     /// Blocks until the next message is received.
     /// If this takes longer than timeout an io::Error is returned instead.
-    fn recv(&self, timeout: Duration) -> io::Result<(usize, Command)> {
+    fn recv(&self, timeout: Duration) -> io::Result<(usize, PaxosMsg)> {
         self.socket
             .set_read_timeout(Some(timeout))
             .expect("set_read_timeout call failed");
 
-        let mut buf = [0; MAX_SZ];
+        let mut buf = [0; MAX_MSG_SIZE];
         let (n, from) = self.socket.recv_from(&mut buf)?;
 
-        let cmd: Command = deserialize(&buf[..n]).unwrap();
+        let cmd: PaxosMsg = deserialize(&buf[..n]).unwrap();
         Ok((Self::addr_to_node_id(from).unwrap(), cmd))
     }
 
     /// Sends the paxos message to all other replicas.
-    fn broadcast(&self, cmd: Command) {
-        for &addr in self.peers.values() {
+    fn broadcast(&self, cmd: PaxosMsg) {
+        for addr in self.peers.clone() {
             self.send(addr, cmd.clone());
         }
     }
 
     /// Sends the paxos message to another replica.
-    fn send(&self, dst: usize, cmd: Command) -> bool {
+    fn send(&self, dst: usize, cmd: PaxosMsg) -> bool {
         let serialized = serialize(&cmd).unwrap();
-        assert!(serialized.len() <= MAX_SZ);
+        assert!(serialized.len() <= MAX_MSG_SIZE);
         self.socket
             .send_to(&serialized, Self::node_id_to_addr(dst))
             .is_ok()
@@ -93,7 +96,6 @@ impl NetworkNode for UdpNetworkNode {
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use proptest::prelude::*;
 
     proptest! {
