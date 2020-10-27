@@ -6,10 +6,13 @@ mod tests {
     use proptest::prelude::*;
 
     proptest! {
+        #![proptest_config(ProptestConfig::with_cases(25))]
+
         #[test]
-        fn random_behaviour(_a in 0..1) {
-            paxos::start_replica(2);
-            paxos::start_replica(2);
+        fn random_behaviour(group_size in 3..20usize) {
+            for _ in 0..group_size {
+                paxos::start_replica(group_size);
+            }
         }
     }
 }
