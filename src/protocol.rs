@@ -13,6 +13,7 @@ use tracing::{debug, error, info, trace, trace_span, warn};
 use crate::network::NetworkNode;
 
 type Value = Vec<u8>;
+type Promise<V> = Vec<(usize, ProposalID, V)>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PaxosMsg {
@@ -22,7 +23,7 @@ pub enum PaxosMsg {
     },
     Promise {
         id: ProposalID,
-        accepted: Vec<(usize, ProposalID, Value)>,
+        accepted: Promise<Value>,
     },
 
     Propose {
@@ -64,8 +65,6 @@ impl ProposalID {
     }
 }
 
-type Promise<V> = Vec<(usize, ProposalID, V)>;
-
 /// Handles all Paxos related state for a single node,
 /// acting as proposer, acceptor and learner.
 #[derive(Debug)]
@@ -73,7 +72,7 @@ pub struct PaxosServer<N> {
     node_id: usize,
     node: N,
     client_cmd_queue: Vec<Value>,
-    log: Vec<PaxosInstance>,
+    log: Vec<LogEntry>,
     majority: usize,
     current_leader: usize,
     current_id: ProposalID,
@@ -83,7 +82,7 @@ pub struct PaxosServer<N> {
 
 /// Holds the state representing a single slot in the log.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-struct PaxosInstance {
+struct LogEntry {
     value: Option<Value>,
     acceptances: usize,
     accepted_id: ProposalID,
@@ -118,7 +117,7 @@ impl<N: NetworkNode> PaxosServer<N> {
 
     /// Runs this Paxos server's main loop.
     pub fn run(&mut self) {
-        // configure a span to associate log-entries with this network node
+        // configure a span to associate tracing output with this network node
         let tracing_span = trace_span!("NetworkNode", self.node_id);
         let _guard = tracing_span.enter();
         info!("Starting Paxos Node with ID {}", self.node_id);
@@ -227,7 +226,7 @@ impl<N: NetworkNode> PaxosServer<N> {
         trace!("Proposal accepted: {:?}", value);
         self.current_leader = src;
         while instance >= self.log.len() {
-            self.log.push(PaxosInstance::new());
+            self.log.push(LogEntry::new());
         }
         self.node.send(src, PaxosMsg::Accept { instance, id });
         self.log[instance].value = Some(value);
@@ -264,7 +263,7 @@ impl<N: NetworkNode> PaxosServer<N> {
     fn handle_learn(&mut self, id: ProposalID, instance: usize, value: Value) {
         info!("Learned: [{}] {:?},{:?}", instance, id, value);
         while instance >= self.log.len() {
-            self.log.push(PaxosInstance::new());
+            self.log.push(LogEntry::new());
         }
         self.log[instance].value = Some(value);
         self.log[instance].accepted_id = id;
@@ -283,7 +282,7 @@ impl<N: NetworkNode> PaxosServer<N> {
         if self.node_id == self.current_leader {
             debug!("Handling client request: {:?}", cmd);
             let value = cmd;
-            self.log.push(PaxosInstance::new_with_value(value.clone()));
+            self.log.push(LogEntry::new_with_value(value.clone()));
             self.node.broadcast(PaxosMsg::Propose {
                 instance: self.log.len() - 1,
                 id: self.current_id,
@@ -342,7 +341,7 @@ impl<N: NetworkNode> PaxosServer<N> {
     }
 }
 
-impl PaxosInstance {
+impl LogEntry {
     fn new() -> Self {
         Self {
             value: None,

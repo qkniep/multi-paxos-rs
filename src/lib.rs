@@ -23,7 +23,9 @@ pub fn start_replicas(group_size: usize) -> Vec<usize> {
     }
     for node_a in 0..group_size {
         for node_b in 0..group_size {
-            if node_a == node_b { continue; }
+            if node_a == node_b {
+                continue;
+            }
             let node_b_id = nodes[node_b].id();
             nodes[node_a].discover(node_b_id);
         }
@@ -79,7 +81,7 @@ mod tests {
     #[test]
     fn submit_value_test() {
         use tracing::Level;
-        use tracing_subscriber::{FmtSubscriber, fmt::time::ChronoLocal};
+        use tracing_subscriber::{fmt::time::ChronoLocal, FmtSubscriber};
 
         // initialize the tracer
         FmtSubscriber::builder()
@@ -90,7 +92,7 @@ mod tests {
         let nodes = start_replicas(2);
         thread::sleep(std::time::Duration::new(3, 0));
         submit_value(nodes[0], &"Hello");
-        submit_value(nodes[1], &"aAௗ0㌀0");
+        submit_value(nodes[1], &(1, 2, 3));
         thread::sleep(std::time::Duration::new(3, 0));
     }
 }
