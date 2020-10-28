@@ -91,6 +91,6 @@ mod tests {
         thread::sleep(std::time::Duration::new(3, 0));
         submit_value(nodes[0], &"Hello");
         submit_value(nodes[1], &"aAௗ0㌀0");
-        loop {}
+        thread::sleep(std::time::Duration::new(3, 0));
     }
 }
