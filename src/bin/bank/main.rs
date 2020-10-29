@@ -2,9 +2,12 @@
 // Distributed under terms of the MIT license.
 
 use std::{io, thread::sleep, time::Duration};
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use tracing::Level;
+
+use paxos::ReplicatedStateMachine;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum CustomerAction {
@@ -26,6 +29,54 @@ pub enum CustomerAction {
     },
 }
 
+impl paxos::AppCommand for CustomerAction {}
+
+struct Bank {
+    balances: HashMap<String, usize>,
+}
+
+impl ReplicatedStateMachine for Bank {
+    type Command = CustomerAction;
+
+    fn execute(&mut self, action: Self::Command) -> bool {
+        match action {
+            CustomerAction::Open { account } => {
+                if self.balances.contains_key(&account) {
+                    false
+                } else {
+                    self.balances.insert(account, 0);
+                    true
+                }
+            },
+            CustomerAction::Deposit { account, amount } => {
+                if let Some(balance) = self.balances.get_mut(&account) {
+                    *balance += amount;
+                    true
+                } else {
+                    false
+                }
+            },
+            CustomerAction::Withdraw { account, amount } => {
+                if let Some(balance) = self.balances.get_mut(&account) {
+                    *balance -= amount;
+                    true
+                } else {
+                    false
+                }
+            },
+            CustomerAction::Transfer { src, dst, amount } => {
+                if self.balances.contains_key(&src) && self.balances.contains_key(&dst) {
+                    *self.balances.get_mut(&src).unwrap() -= amount;
+                    *self.balances.get_mut(&dst).unwrap() += amount;
+                    true
+                } else {
+                    false
+                }
+            },
+        }
+    }
+}
+
 fn main() -> io::Result<()> {
     use tracing_subscriber::{fmt::time::ChronoLocal, FmtSubscriber};
 
@@ -36,30 +87,30 @@ fn main() -> io::Result<()> {
         .init();
 
     // create and connect a number of bank branches
-    let branches = paxos::start_replicas(5);
+    let branches = paxos::start_replicas::<CustomerAction>(5);
     sleep(Duration::new(2, 0));
 
-    paxos::submit_value(branches[0], &CustomerAction::Open {
+    paxos::submit_value(branches[0], CustomerAction::Open {
         account: "Peter".to_string(),
     });
-    paxos::submit_value(branches[3], &CustomerAction::Open {
+    paxos::submit_value(branches[3], CustomerAction::Open {
         account: "Dieter".to_string(),
     });
 
-    paxos::submit_value(branches[1], &CustomerAction::Deposit {
+    paxos::submit_value(branches[1], CustomerAction::Deposit {
         account: "Peter".to_string(),
         amount: 100,
     });
-    paxos::submit_value(branches[2], &CustomerAction::Withdraw {
+    paxos::submit_value(branches[2], CustomerAction::Withdraw {
         account: "Dieter".to_string(),
         amount: 50,
     });
 
-    paxos::submit_value(branches[4], &CustomerAction::Deposit {
+    paxos::submit_value(branches[4], CustomerAction::Deposit {
         account: "Dieter".to_string(),
         amount: 60,
     });
-    paxos::submit_value(branches[0], &CustomerAction::Withdraw {
+    paxos::submit_value(branches[0], CustomerAction::Withdraw {
         account: "Peter".to_string(),
         amount: 80,
     });

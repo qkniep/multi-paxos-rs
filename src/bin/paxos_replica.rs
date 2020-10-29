@@ -22,7 +22,7 @@ fn main() {
 
     println!("Running Paxos replica on {}:{}.", host, port);
 
-    paxos::start_replica(group_size);
+    paxos::start_replica::<String>(group_size);
 
     loop {}
 }
