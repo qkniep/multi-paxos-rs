@@ -2,13 +2,12 @@
 // Distributed under terms of the MIT license.
 
 use std::collections::HashSet;
-use std::{io, fmt::Debug};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::time::Duration;
+use std::{fmt::Debug, io};
 
 use bincode::{deserialize, serialize};
 use rand::prelude::*;
-use serde::{de::DeserializeOwned, Serialize};
 
 use crate::protocol::PaxosMsg;
 
@@ -22,7 +21,7 @@ pub struct UdpNetworkNode<V> {
     pub peers: HashSet<usize>,
 }
 
-impl<V: Clone + Debug + Serialize + DeserializeOwned> UdpNetworkNode<V> {
+impl<V: crate::AppCommand> UdpNetworkNode<V> {
     /// Creates a new network node on localhost with random port.
     pub fn new() -> Self {
         loop {

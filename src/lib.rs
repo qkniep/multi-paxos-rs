@@ -6,7 +6,7 @@
 use std::fmt::Debug;
 use std::thread;
 
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{de::DeserializeOwned, Serialize};
 
 use protocol::{PaxosMsg, PaxosServer};
 use udp_network::UdpNetworkNode;
