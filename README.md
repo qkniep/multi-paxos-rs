@@ -17,11 +17,13 @@ TBA, the API is not fixed yet.
 - [ ] random failure testing
 - [ ] liveness recovery after failures testing
 - [ ] persistent storage of log
-- [ ] handle NACKs
+- [ ] master leases
+- [ ] full disclosure
 - [ ] specify library API
-- [ ] benchmarking
+- [ ] handle NACKs
 - [ ] group membership changes
-- [ ] snapshot support
+- [ ] snapshots
+- [ ] benchmarking
 - [ ] runtime consistency checks (checksum pushed into the log by leader)
 - [ ] checksums on stored data
 
