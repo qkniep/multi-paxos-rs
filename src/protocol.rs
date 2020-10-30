@@ -14,47 +14,48 @@ use crate::udp_network::UdpNetworkNode;
 
 /// Unique monotonically-increasing ID.
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd, Eq, Ord, Serialize, Deserialize)]
-pub struct ProposalID(usize, usize);
+pub struct Ballot(usize, usize);
 
-impl ProposalID {
+impl Ballot {
     fn increment(&mut self) {
         self.0 += 1;
     }
 }
 
-type Promise<V> = Vec<(usize, ProposalID, V)>;
+type PValue<V> = (usize, Ballot, V);
+type Promise<V> = Vec<PValue<V>>;
 
 /// Internal messages for the Paxos protocol.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PaxosMsg<V: Debug> {
     Prepare {
-        id: ProposalID,
+        id: Ballot,
         holes: Vec<usize>,
     },
     Promise {
-        id: ProposalID,
+        id: Ballot,
         accepted: Promise<V>,
     },
 
     Propose {
-        id: ProposalID,
+        id: Ballot,
         instance: usize,
         value: V,
     },
     Accept {
-        id: ProposalID,
+        id: Ballot,
         instance: usize,
     },
 
     Learn {
-        id: ProposalID,
+        id: Ballot,
         instance: usize,
         value: V,
     },
 
     /// Currently only used for rejecting Proposals.
     Nack {
-        id: ProposalID,
+        id: Ballot,
         instance: usize,
     },
 
@@ -69,11 +70,11 @@ pub struct PaxosServer<V: Debug> {
     node: UdpNetworkNode<V>,
     client_cmd_queue: Vec<V>,
     log: Vec<LogEntry<V>>,
-    majority: usize,
+    quorum: usize,
     current_leader: usize,
-    current_id: ProposalID,
-    highest_promised: ProposalID,
-    promises: Vec<(ProposalID, Promise<V>)>,
+    current_id: Ballot,
+    highest_promised: Ballot,
+    promises: Vec<(Ballot, Promise<V>)>,
 }
 
 /// Holds the state representing a single slot in the log.
@@ -81,7 +82,7 @@ pub struct PaxosServer<V: Debug> {
 struct LogEntry<V> {
     value: Option<V>,
     acceptances: usize,
-    accepted_id: ProposalID,
+    accepted_id: Ballot,
     chosen: bool,
 }
 
@@ -103,10 +104,10 @@ impl<V: crate::AppCommand> PaxosServer<V> {
             node,
             client_cmd_queue: Vec::new(),
             log: Vec::new(),
-            majority: node_count / 2 + 1,
+            quorum: node_count / 2 + 1,
             current_leader: 0,
-            current_id: ProposalID(1, node_id),
-            highest_promised: ProposalID(0, 0),
+            current_id: Ballot(1, node_id),
+            highest_promised: Ballot(0, 0),
             promises: Vec::new(),
         }
     }
@@ -153,7 +154,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
 
     /// Responds to a Paxos Prepare (1a) message.
     /// Sends a Promise back to the sender iff this node has not made Promise for a higher id yet.
-    fn handle_prepare(&mut self, src: usize, id: ProposalID, holes: Vec<usize>) {
+    fn handle_prepare(&mut self, src: usize, id: Ballot, holes: Vec<usize>) {
         if id < self.highest_promised {
             warn!("Prepare rejected: {:?}<{:?}", id, self.highest_promised);
             return;
@@ -185,7 +186,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
     }
 
     /// Responds to a Paxos Promise (1b) message.
-    fn handle_promise(&mut self, id: ProposalID, accepted: Promise<V>) {
+    fn handle_promise(&mut self, id: Ballot, accepted: Promise<V>) {
         if id != self.current_id {
             warn!("Promise rejected: {:?}!={:?}", id, self.current_id);
             return;
@@ -194,7 +195,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
         debug!("Got a promise: {:?}, {:?}", id, accepted);
         self.promises.push((id, accepted)); // TODO: Remove promises w/ old id before counting.
 
-        if self.promises.len() == self.majority {
+        if self.promises.len() == self.quorum {
             info!("Got elected.");
             self.current_leader = self.current_id.1;
             for (i, instance) in (&self.log)
@@ -212,7 +213,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
     }
 
     /// Responds to a Paxos Propose (2a) message.
-    fn handle_propose(&mut self, src: usize, id: ProposalID, instance: usize, value: V) {
+    fn handle_propose(&mut self, src: usize, id: Ballot, instance: usize, value: V) {
         if id < self.highest_promised {
             warn!("Proposal rejected: {:?}", value);
             self.node.send(src, &PaxosMsg::Nack { instance, id });
@@ -230,7 +231,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
     }
 
     /// Responds to a Paxos Accept (2b) message.
-    fn handle_accept(&mut self, id: ProposalID, instance: usize) {
+    fn handle_accept(&mut self, id: Ballot, instance: usize) {
         if id != self.current_id {
             warn!(
                 "Accept rejected: [{}]: {:?}!={:?}",
@@ -239,10 +240,10 @@ impl<V: crate::AppCommand> PaxosServer<V> {
             return;
         }
         self.log[instance].acceptances += 1;
-        if self.log[instance].acceptances == self.majority {
+        if self.log[instance].acceptances == self.quorum {
             debug!(
                 "Sending learn with {}/{} acceptances.",
-                self.log[instance].acceptances, self.majority
+                self.log[instance].acceptances, self.quorum
             );
             let value = self.log[instance].value.clone().unwrap();
             info!("Value was chosen: [{}]: {:?}, {:?}", instance, id, value);
@@ -256,7 +257,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
     }
 
     /// Handles a Learn message.
-    fn handle_learn(&mut self, id: ProposalID, instance: usize, value: V) {
+    fn handle_learn(&mut self, id: Ballot, instance: usize, value: V) {
         info!("Learned: [{}] {:?},{:?}", instance, id, value);
         while instance >= self.log.len() {
             self.log.push(LogEntry::new());
@@ -267,7 +268,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
     }
 
     /// Handles a negative acknowledgement message.
-    fn handle_nack(&mut self, _id: ProposalID, _instance: usize) {
+    fn handle_nack(&mut self, _id: Ballot, _instance: usize) {
         warn!("Received a Nack!");
         // TODO: clean state for request #id
     }
@@ -322,7 +323,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
         });
     }
 
-    fn get_accepted_values_iter(&self) -> impl Iterator<Item = (usize, ProposalID, &V)> {
+    fn get_accepted_values_iter(&self) -> impl Iterator<Item = (usize, Ballot, &V)> {
         (&self.log)
             .iter()
             .enumerate()
@@ -342,7 +343,7 @@ impl<V> LogEntry<V> {
         Self {
             value: None,
             acceptances: 0,
-            accepted_id: ProposalID(0, 0),
+            accepted_id: Ballot(0, 0),
             chosen: false,
         }
     }
@@ -351,7 +352,7 @@ impl<V> LogEntry<V> {
         Self {
             value: Some(value),
             acceptances: 1,
-            accepted_id: ProposalID(0, 0),
+            accepted_id: Ballot(0, 0),
             chosen: false,
         }
     }

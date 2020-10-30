@@ -16,9 +16,9 @@ const MAX_MSG_SIZE: usize = 64 * 1024;
 /// A network node that uses UDP and bincode for sending messages.
 #[derive(Debug)]
 pub struct UdpNetworkNode<V> {
-    mark: std::marker::PhantomData<V>,
     pub socket: UdpSocket,
     pub peers: HashSet<usize>,
+    _marker: std::marker::PhantomData<V>,
 }
 
 impl<V: crate::AppCommand> UdpNetworkNode<V> {
@@ -28,9 +28,9 @@ impl<V: crate::AppCommand> UdpNetworkNode<V> {
             let port = rand::thread_rng().gen_range(1024, 65535);
             if let Ok(socket) = UdpSocket::bind(("127.0.0.1", port)) {
                 return Self {
-                    mark: std::marker::PhantomData,
                     socket,
                     peers: HashSet::new(),
+                    _marker: Default::default(),
                 };
             }
         }
