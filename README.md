@@ -31,3 +31,5 @@ TBA, the API is not fixed yet.
 
 - L. Lamport 2001 ["Paxos Made Simple"](http://lamport.azurewebsites.net/pubs/paxos-simple.pdf)
 - T. Chandra et al. 2007 ["Paxos Made Live"](http://www.read.seas.harvard.edu/~kohler/class/08w-dsi/chandra07paxos.pdf)
+- B. Lampson 1996 ["How to Build a Highly Available System Using Consensus"](https://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.61.8330&rep=rep1&type=pdf)
+- [Understanding Paxos](https://understandingpaxos.wordpress.com/)

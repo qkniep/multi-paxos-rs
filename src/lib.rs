@@ -23,6 +23,7 @@ pub trait ReplicatedStateMachine {
     fn execute(&mut self, v: Self::Command) -> bool;
 }
 
+/// Start a set of testing replicas, all running on localhost and connected to each other.
 pub fn start_replicas<V: AppCommand>(group_size: usize) -> Vec<usize> {
     // create the network nodes
     let mut nodes = Vec::new();

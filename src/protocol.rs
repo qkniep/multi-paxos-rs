@@ -1,7 +1,7 @@
 // Copyright (C) 2020 Quentin M. Kniep <hello@quentinkniep.com>
 // Distributed under terms of the MIT license.
 
-//! Contains the network-message-types for the Paxos consensus protocol.
+//! Contains the main algorithm for the Paxos consensus protocol.
 
 use std::fmt::Debug;
 use std::time::Duration;
@@ -163,6 +163,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
         debug!("Promise vote: {:?}", id);
         self.highest_promised = id;
         self.current_leader = src;
+        // TODO: flush to disk
 
         // Fills accepted_values with all values this node has accepted and
         // the sender of the Prepare has marked as not yet known to be chosen (in holes).
@@ -197,12 +198,13 @@ impl<V: crate::AppCommand> PaxosServer<V> {
 
         if self.promises.len() == self.quorum {
             info!("Got elected.");
-            self.current_leader = self.current_id.1;
+            self.current_leader = self.node_id;
             for (i, instance) in (&self.log)
                 .iter()
                 .enumerate()
                 .filter(|(_, instance)| !instance.chosen)
             {
+                // TODO: do not chose own value if any is present in promise
                 self.node.broadcast(PaxosMsg::Propose {
                     instance: i,
                     id,
@@ -265,6 +267,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
         self.log[instance].value = Some(value);
         self.log[instance].accepted_id = id;
         self.log[instance].chosen = true;
+        // TODO: flush to disk
     }
 
     /// Handles a negative acknowledgement message.

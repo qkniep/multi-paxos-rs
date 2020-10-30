@@ -31,6 +31,7 @@ pub enum CustomerAction {
 
 impl paxos::AppCommand for CustomerAction {}
 
+#[derive(Default)]
 struct Bank {
     balances: HashMap<String, usize>,
 }
