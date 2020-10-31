@@ -14,12 +14,12 @@ TBA, the API is not fixed yet.
 
 # Roadmap
 
-- [ ] random failure testing
-- [ ] liveness recovery after failures testing
+- [x] master leases
 - [ ] persistent storage of log
-- [ ] master leases
 - [ ] full disclosure
 - [ ] specify library API
+- [ ] random failure testing
+- [ ] liveness recovery after failures testing
 - [ ] handle NACKs
 - [ ] group membership changes
 - [ ] snapshots
