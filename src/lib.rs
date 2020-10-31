@@ -72,14 +72,14 @@ mod tests {
 
         #[test]
         fn random_start_replica_test(group_size in 1..50usize) {
-            for _ in 0..group_size {
-                start_replica::<String>(group_size);
-            }
+            start_replicas::<String>(group_size);
         }
         #[test]
         fn submit_random_value_test(s in "\\PC*{1,128}") {
             let nodes = start_replicas::<String>(3);
+            thread::sleep(std::time::Duration::new(2, 0));
             submit_value(nodes[0], s);
+            thread::sleep(std::time::Duration::new(1, 0));
         }
     }
 
@@ -90,15 +90,6 @@ mod tests {
 
     #[test]
     fn submit_value_test() {
-        use tracing::Level;
-        use tracing_subscriber::{fmt::time::ChronoLocal, FmtSubscriber};
-
-        // initialize the tracer
-        FmtSubscriber::builder()
-            .with_timer(ChronoLocal::with_format("[%Mm %Ss]".to_string()))
-            .with_max_level(Level::TRACE)
-            .init();
-
         let nodes = start_replicas::<String>(2);
         thread::sleep(std::time::Duration::new(3, 0));
         submit_value(nodes[0], "Hello".to_owned());
