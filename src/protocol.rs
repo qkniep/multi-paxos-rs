@@ -4,7 +4,7 @@
 //! Contains the main algorithm for the Paxos consensus protocol.
 
 use std::fmt::Debug;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 #[allow(unused_imports)]
@@ -12,13 +12,20 @@ use tracing::{debug, error, info, trace, trace_span, warn};
 
 use crate::udp_network::UdpNetworkNode;
 
+/// Duration
+static LEASE_DURATION: u64 = 2;
+
 /// Unique monotonically-increasing ID.
-#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd, Eq, Ord, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd, Eq, Ord)]
 pub struct Ballot(usize, usize);
 
 impl Ballot {
-    fn increment(&mut self) {
-        self.0 += 1;
+    fn increment_for(&mut self, node_id: usize) {
+        if self.1 > node_id {
+            self.0 += 1;
+        }
+        self.1 = node_id;
     }
 }
 
@@ -26,7 +33,8 @@ type PValue<V> = (usize, Ballot, V);
 type Promise<V> = Vec<PValue<V>>;
 
 /// Internal messages for the Paxos protocol.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub enum PaxosMsg<V: Debug> {
     Prepare {
         id: Ballot,
@@ -71,14 +79,17 @@ pub struct PaxosServer<V: Debug> {
     client_cmd_queue: Vec<V>,
     log: Vec<LogEntry<V>>,
     quorum: usize,
+    // TODO: replace with Option<usize>
     current_leader: usize,
-    current_id: Ballot,
+    leader_lease_start: Instant,
+    /// Always holds the highest
     highest_promised: Ballot,
     promises: Vec<(Ballot, Promise<V>)>,
 }
 
 /// Holds the state representing a single slot in the log.
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug, Default)]
 struct LogEntry<V> {
     value: Option<V>,
     acceptances: usize,
@@ -106,7 +117,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
             log: Vec::new(),
             quorum: node_count / 2 + 1,
             current_leader: 0,
-            current_id: Ballot(1, node_id),
+            leader_lease_start: Instant::now(),
             highest_promised: Ballot(0, 0),
             promises: Vec::new(),
         }
@@ -121,13 +132,20 @@ impl<V: crate::AppCommand> PaxosServer<V> {
 
         loop {
             // event loop for incoming messages
-            while let Ok(msg) = self.node.recv(Duration::from_millis(1000)) {
+            while let Ok(msg) = self.node.recv(Duration::from_millis(100)) {
                 let (src, cmd) = msg;
                 self.handle_paxos_message(src, cmd);
             }
 
-            warn!("Long time w/o receiving anything!");
-            self.start_election();
+            //warn!("Long time w/o receiving anything!");
+            if self.leader_lease_start.elapsed().as_secs() >= LEASE_DURATION {
+                warn!("Leader's lease timed out: Starting election.");
+                self.start_election();
+            } else if self.leader_lease_start.elapsed().as_secs() >= LEASE_DURATION / 2 &&
+                self.node_id == self.current_leader {
+                    info!("Extending my lease: Starting election.");
+                    self.start_election();
+            }
         }
     }
 
@@ -158,11 +176,16 @@ impl<V: crate::AppCommand> PaxosServer<V> {
         if id < self.highest_promised {
             warn!("Prepare rejected: {:?}<{:?}", id, self.highest_promised);
             return;
+        } else if self.leader_lease_start.elapsed().as_secs() < LEASE_DURATION && src !=
+            self.current_leader {
+            warn!("Prepare rejected: {:?} currently holds the lease", self.current_leader);
+            return;
         }
 
         debug!("Promise vote: {:?}", id);
         self.highest_promised = id;
         self.current_leader = src;
+        self.leader_lease_start = Instant::now();
         // TODO: flush to disk
 
         // Fills accepted_values with all values this node has accepted and
@@ -188,8 +211,8 @@ impl<V: crate::AppCommand> PaxosServer<V> {
 
     /// Responds to a Paxos Promise (1b) message.
     fn handle_promise(&mut self, id: Ballot, accepted: Promise<V>) {
-        if id != self.current_id {
-            warn!("Promise rejected: {:?}!={:?}", id, self.current_id);
+        if id != self.highest_promised {
+            warn!("Promise rejected: {:?}!={:?}", id, self.highest_promised);
             return;
         }
 
@@ -199,6 +222,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
         if self.promises.len() == self.quorum {
             info!("Got elected.");
             self.current_leader = self.node_id;
+            self.leader_lease_start = Instant::now();
             for (i, instance) in (&self.log)
                 .iter()
                 .enumerate()
@@ -234,10 +258,10 @@ impl<V: crate::AppCommand> PaxosServer<V> {
 
     /// Responds to a Paxos Accept (2b) message.
     fn handle_accept(&mut self, id: Ballot, instance: usize) {
-        if id != self.current_id {
+        if id != self.highest_promised {
             warn!(
                 "Accept rejected: [{}]: {:?}!={:?}",
-                instance, id, self.current_id
+                instance, id, self.highest_promised
             );
             return;
         }
@@ -285,7 +309,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
             self.log.push(LogEntry::new_with_value(value.clone()));
             self.node.broadcast(PaxosMsg::Propose {
                 instance: self.log.len() - 1,
-                id: self.current_id,
+                id: self.highest_promised,
                 value,
             });
         } else {
@@ -302,14 +326,12 @@ impl<V: crate::AppCommand> PaxosServer<V> {
 
     /// Initiates a new election (Prepare/Promise sequence).
     fn start_election(&mut self) {
-        info!("Starting election.");
-        self.current_id.increment();
-        self.highest_promised = self.current_id;
+        self.highest_promised.increment_for(self.node_id);
         let accepted_values = self
             .get_accepted_values_iter()
             .map(|(id, i, v)| (id, i, v.clone()))
             .collect();
-        self.promises = vec![(self.current_id, accepted_values)];
+        self.promises = vec![(self.highest_promised, accepted_values)];
 
         let mut holes: Vec<usize> = (&self.log)
             .iter()
@@ -321,7 +343,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
         debug!("Missing values: {:?}", holes);
 
         self.node.broadcast(PaxosMsg::Prepare {
-            id: self.current_id,
+            id: self.highest_promised,
             holes,
         });
     }

@@ -9,7 +9,8 @@ use tracing::Level;
 
 use paxos::ReplicatedStateMachine;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
+#[derive(Clone, Debug)]
 pub enum CustomerAction {
     Open {
         account: String,
@@ -89,7 +90,7 @@ fn main() -> io::Result<()> {
 
     // create and connect a number of bank branches
     let branches = paxos::start_replicas::<CustomerAction>(5);
-    sleep(Duration::new(2, 0));
+    sleep(Duration::new(3, 0));
 
     paxos::submit_value(
         branches[0],
