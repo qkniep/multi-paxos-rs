@@ -9,8 +9,7 @@ use tracing::Level;
 
 use paxos::ReplicatedStateMachine;
 
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum CustomerAction {
     Open {
         account: String,

@@ -12,12 +12,11 @@ use tracing::{debug, error, info, trace, trace_span, warn};
 
 use crate::udp_network::UdpNetworkNode;
 
-/// Duration
+/// Duration until the leader's lease expires after election.
 static LEASE_DURATION: u64 = 2;
 
 /// Unique monotonically-increasing ID.
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, PartialOrd, Eq, Ord)]
 pub struct Ballot(usize, usize);
 
 impl Ballot {
@@ -33,8 +32,7 @@ type PValue<V> = (usize, Ballot, V);
 type Promise<V> = Vec<PValue<V>>;
 
 /// Internal messages for the Paxos protocol.
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum PaxosMsg<V: Debug> {
     Prepare {
         id: Ballot,
@@ -88,8 +86,7 @@ pub struct PaxosServer<V: Debug> {
 }
 
 /// Holds the state representing a single slot in the log.
-#[derive(Serialize, Deserialize)]
-#[derive(Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 struct LogEntry<V> {
     value: Option<V>,
     acceptances: usize,
@@ -141,10 +138,11 @@ impl<V: crate::AppCommand> PaxosServer<V> {
             if self.leader_lease_start.elapsed().as_secs() >= LEASE_DURATION {
                 warn!("Leader's lease timed out: Starting election.");
                 self.start_election();
-            } else if self.leader_lease_start.elapsed().as_secs() >= LEASE_DURATION / 2 &&
-                self.node_id == self.current_leader {
-                    info!("Extending my lease: Starting election.");
-                    self.start_election();
+            } else if self.leader_lease_start.elapsed().as_secs() >= LEASE_DURATION / 2
+                && self.node_id == self.current_leader
+            {
+                info!("Extending my lease: Starting election.");
+                self.start_election();
             }
         }
     }
@@ -176,9 +174,13 @@ impl<V: crate::AppCommand> PaxosServer<V> {
         if id < self.highest_promised {
             warn!("Prepare rejected: {:?}<{:?}", id, self.highest_promised);
             return;
-        } else if self.leader_lease_start.elapsed().as_secs() < LEASE_DURATION && src !=
-            self.current_leader {
-            warn!("Prepare rejected: {:?} currently holds the lease", self.current_leader);
+        } else if self.leader_lease_start.elapsed().as_secs() < LEASE_DURATION
+            && src != self.current_leader
+        {
+            warn!(
+                "Prepare rejected: {:?} currently holds the lease",
+                self.current_leader
+            );
             return;
         }
 
