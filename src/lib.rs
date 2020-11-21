@@ -3,16 +3,15 @@
 
 //! Implementation of a replicated log using the Multi-Paxos consensus protocol.
 
-use std::fmt::Debug;
-use std::thread;
+mod protocol;
+mod udp_network;
+
+use std::{fmt::Debug, thread};
 
 use serde::{de::DeserializeOwned, Serialize};
 
 use protocol::{PaxosMsg, PaxosServer};
 use udp_network::UdpNetworkNode;
-
-mod protocol;
-mod udp_network;
 
 pub trait AppCommand: Clone + Debug + Serialize + DeserializeOwned + Send + 'static {}
 impl AppCommand for String {}

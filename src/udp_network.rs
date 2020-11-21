@@ -24,6 +24,7 @@ pub struct UdpNetworkNode<V> {
 impl<V: crate::AppCommand> UdpNetworkNode<V> {
     /// Creates a new network node on localhost with random port.
     pub fn new() -> Self {
+        // loop until we find an unused port
         loop {
             let port = rand::thread_rng().gen_range(1024, 65535);
             if let Ok(socket) = UdpSocket::bind(("127.0.0.1", port)) {
@@ -36,6 +37,7 @@ impl<V: crate::AppCommand> UdpNetworkNode<V> {
         }
     }
 
+    /// Adds another peer's ID to this node's list of known peers.
     pub fn discover(&mut self, other_node: usize) {
         self.peers.insert(other_node);
     }
@@ -54,14 +56,14 @@ impl<V: crate::AppCommand> UdpNetworkNode<V> {
         Ok((Self::addr_to_node_id(from).unwrap(), cmd))
     }
 
-    /// Sends the paxos message to all other replicas.
+    /// Sends the Paxos message to all other replicas.
     pub fn broadcast(&self, cmd: PaxosMsg<V>) {
         for addr in self.peers.clone() {
             self.send(addr, &cmd);
         }
     }
 
-    /// Sends the paxos message to another replica.
+    /// Sends the Paxos message to another replica.
     pub fn send(&self, dst: usize, cmd: &PaxosMsg<V>) -> bool {
         let serialized = serialize(cmd).unwrap();
         assert!(serialized.len() <= MAX_MSG_SIZE);
@@ -74,6 +76,8 @@ impl<V: crate::AppCommand> UdpNetworkNode<V> {
         Self::addr_to_node_id(self.socket.local_addr().unwrap()).unwrap()
     }
 
+    /// Convert a socket address (IP + port) into a usize node ID.
+    /// This transformation can be reversed.
     fn addr_to_node_id(addr: SocketAddr) -> Option<usize> {
         let port = addr.port();
         if let IpAddr::V4(ip) = addr.ip() {
@@ -84,6 +88,8 @@ impl<V: crate::AppCommand> UdpNetworkNode<V> {
         }
     }
 
+    /// Convert a usize node ID into a socket address (IP + port).
+    /// This transformation can be reversed.
     fn node_id_to_addr(node_id: usize) -> SocketAddr {
         let port = (node_id % 65536) as u16;
         let ip = (node_id / 65536) as u32;

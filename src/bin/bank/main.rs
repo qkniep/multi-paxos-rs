@@ -84,7 +84,7 @@ fn main() -> io::Result<()> {
     // initialize the tracer
     FmtSubscriber::builder()
         .with_timer(ChronoLocal::with_format("[%Mm %Ss]".to_string()))
-        .with_max_level(Level::TRACE)
+        .with_max_level(Level::INFO)
         .init();
 
     // create and connect a number of bank branches

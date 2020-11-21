@@ -8,8 +8,7 @@ use std::time::{Duration, Instant};
 
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
-#[allow(unused_imports)]
-use tracing::{debug, error, info, trace, trace_span, warn};
+use tracing::{debug, error, info, trace, info_span, warn};
 
 use crate::udp_network::UdpNetworkNode;
 
@@ -45,25 +44,25 @@ pub enum PaxosMsg<V: Debug> {
     },
 
     Propose {
-        id: Ballot,
         index: usize,
+        id: Ballot,
         value: V,
     },
     Accept {
-        id: Ballot,
         index: usize,
+        id: Ballot,
     },
 
     Learn {
-        id: Ballot,
         index: usize,
+        id: Ballot,
         value: V,
     },
 
     /// Currently only used for rejecting Proposals.
     Nack {
-        id: Ballot,
         index: usize,
+        id: Ballot,
     },
 
     ClientRequest(V),
@@ -89,7 +88,7 @@ pub struct PaxosServer<V: Debug> {
 }
 
 /// Holds the state representing a single slot in the log.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 struct LogEntry<V> {
     value: Option<V>,
     acceptances: usize,
@@ -127,7 +126,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
     /// Runs this Paxos server's main loop.
     pub fn run(&mut self) {
         // configure a span to associate tracing output with this network node
-        let tracing_span = trace_span!("Server", id = self.node_id);
+        let tracing_span = info_span!("Server", id = self.node_id);
         let _guard = tracing_span.enter();
         info!("Starting Paxos Node with ID {}", self.node_id);
 
@@ -154,13 +153,14 @@ impl<V: crate::AppCommand> PaxosServer<V> {
 
     /// Parses the message and calls the method corresponding to the message type.
     fn handle_paxos_message(&mut self, src: usize, cmd: PaxosMsg<V>) {
+        trace!("Received a message: {:?}", cmd);
         match cmd {
             PaxosMsg::Prepare { id, holes } => self.handle_prepare(src, id, holes),
             PaxosMsg::Promise { id, accepted } => self.handle_promise(id, accepted),
-            PaxosMsg::Propose { id, index, value } => self.handle_propose(src, id, index, value),
-            PaxosMsg::Accept { id, index } => self.handle_accept(id, index),
-            PaxosMsg::Learn { id, index, value } => self.handle_learn(id, index, value),
-            PaxosMsg::Nack { id, index } => self.handle_nack(id, index),
+            PaxosMsg::Propose { index, id, value } => self.handle_propose(src, index, id, value),
+            PaxosMsg::Accept { index, id } => self.handle_accept(src, index, id),
+            PaxosMsg::Learn { index, id, value } => self.handle_learn(index, id, value),
+            PaxosMsg::Nack { index, id } => self.handle_nack(index, id),
             PaxosMsg::ClientRequest(value) => self.handle_client_request(value),
         }
     }
@@ -238,7 +238,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
     }
 
     /// Responds to a Paxos Propose (2a) message.
-    fn handle_propose(&mut self, src: usize, id: Ballot, index: usize, value: V) {
+    fn handle_propose(&mut self, src: usize, index: usize, id: Ballot, value: V) {
         if id < self.highest_promised {
             warn!("Proposal rejected: {:?}", value);
             self.node.send(src, &PaxosMsg::Nack { index, id });
@@ -248,7 +248,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
         trace!("Proposal accepted: {:?}", value);
         self.current_leader = src;
         while index >= self.log.len() {
-            self.log.push(LogEntry::new());
+            self.log.push(LogEntry::default());
         }
         self.node.send(src, &PaxosMsg::Accept { index, id });
         self.log[index].value = Some(value);
@@ -256,14 +256,15 @@ impl<V: crate::AppCommand> PaxosServer<V> {
     }
 
     /// Responds to a Paxos Accept (2b) message.
-    fn handle_accept(&mut self, id: Ballot, index: usize) {
+    fn handle_accept(&mut self, src: usize, index: usize, id: Ballot) {
         if id != self.highest_promised {
             warn!(
-                "Accept rejected: [{}]: {:?}!={:?}",
+                "Accept rejected: [{}] {:?}!={:?}",
                 index, id, self.highest_promised
             );
             return;
         }
+        // TODO: count each sender only once
         self.log[index].acceptances += 1;
         if self.log[index].acceptances == self.quorum {
             debug!(
@@ -271,17 +272,17 @@ impl<V: crate::AppCommand> PaxosServer<V> {
                 self.log[index].acceptances, self.quorum
             );
             let value = self.log[index].value.clone().unwrap();
-            info!("Value was chosen: [{}]: {:?}, {:?}", index, id, value);
+            info!("Value was chosen: [{}] {:?}, {:?}", index, id, value);
             self.node.broadcast(PaxosMsg::Learn { index, id, value });
             self.log[index].chosen = true;
         }
     }
 
     /// Handles a Learn message.
-    fn handle_learn(&mut self, id: Ballot, index: usize, value: V) {
-        info!("Learned: [{}] {:?},{:?}", index, id, value);
+    fn handle_learn(&mut self, index: usize, id: Ballot, value: V) {
+        info!("Learned: [{}] {:?}, {:?}", index, id, value);
         while index >= self.log.len() {
-            self.log.push(LogEntry::new());
+            self.log.push(LogEntry::default());
         }
         self.log[index].value = Some(value);
         self.log[index].accepted_id = id;
@@ -290,8 +291,8 @@ impl<V: crate::AppCommand> PaxosServer<V> {
     }
 
     /// Handles a negative acknowledgement message.
-    fn handle_nack(&mut self, _id: Ballot, _index: usize) {
-        warn!("Received a Nack!");
+    fn handle_nack(&mut self, index: usize, id: Ballot) {
+        warn!("Received a NACK.");
         // TODO: clean state for request #id
     }
 
@@ -301,7 +302,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
         if self.node_id == self.current_leader {
             debug!("Handling client request: {:?}", cmd);
             let value = cmd;
-            self.log.push(LogEntry::new_with_value(value.clone()));
+            self.log.push(LogEntry::new(value.clone()));
             self.node.broadcast(PaxosMsg::Propose {
                 index: self.log.len() - 1,
                 id: self.highest_promised,
@@ -314,7 +315,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
                 .node
                 .send(self.current_leader, &PaxosMsg::ClientRequest(cmd.clone()))
             {
-                error!("Relaying command to leader failed!");
+                error!("Relaying command to leader failed.");
                 self.client_cmd_queue.push(cmd);
             }
         }
@@ -344,15 +345,21 @@ impl<V: crate::AppCommand> PaxosServer<V> {
         });
     }
 
-    fn flush_to_disk(&self) -> bincode::Result<()> {
+    /// Save all persistent state for this replica to disk.
+    fn flush_to_disk(&self) -> Result<(), ()> {
         let storage = std::fs::OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
-            .open("dump.bin")
-            .expect("[STORAGE ERROR]: could not create stable storage");
+            .open("log.bin")
+            .map_err(|e| {
+                error!("Failed to create or open file: {:?}", e);
+            })?;
         // TODO: flush other relevant information (e.g. highest Ballot)
         bincode::serialize_into(storage, &self.log)
+            .map_err(|e| {
+                error!("Failed to serialize state: {:?}", e);
+            })
     }
 
     fn get_accepted_values_iter(&self) -> impl Iterator<Item = (usize, Ballot, &V)> {
@@ -365,19 +372,21 @@ impl<V: crate::AppCommand> PaxosServer<V> {
 }
 
 impl<V> LogEntry<V> {
-    fn new() -> Self {
+    fn new(value: V) -> Self {
         Self {
-            value: None,
-            acceptances: 0,
+            value: Some(value),
+            acceptances: 1,
             accepted_id: Ballot(0, 0),
             chosen: false,
         }
     }
+}
 
-    fn new_with_value(value: V) -> Self {
+impl<V> Default for LogEntry<V> {
+    fn default() -> Self {
         Self {
-            value: Some(value),
-            acceptances: 1,
+            value: None,
+            acceptances: 0,
             accepted_id: Ballot(0, 0),
             chosen: false,
         }
