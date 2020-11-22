@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 use rand::{thread_rng, Rng};
 use tracing::{debug, error, info, info_span, trace, warn};
 
-use crate::protocol::{Ballot, LEASE_DURATION, LogEntry, PaxosMsg, Promise};
-use crate::storage::store_in_disk_file;
+use crate::protocol::{Ballot, LogEntry, PaxosMsg, Promise, LEASE_DURATION};
+use crate::storage::*;
 use crate::udp_network::UdpNetworkNode;
 
 /// Handles all Paxos related state for a single node, acting as proposer, acceptor and learner.
@@ -74,6 +74,7 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
                 self.handle_paxos_message(src, cmd);
             }
 
+            // detect leader timeout or try to prolong our own lease
             if self.leader_lease_start.elapsed().as_millis()
                 >= LEASE_DURATION + self.random_timeout_offset.as_millis()
             {
@@ -107,14 +108,13 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
     fn handle_prepare(&mut self, src: usize, id: Ballot, holes: Vec<usize>) {
         if id < self.highest_promised {
             warn!("Prepare rejected: {:?}<{:?}", id, self.highest_promised);
+            // TODO: send NACK
             return;
         } else if self.leader_lease_start.elapsed().as_millis() < LEASE_DURATION
             && src != self.current_leader
         {
-            warn!(
-                "Prepare rejected: {:?} currently holds the lease",
-                self.current_leader
-            );
+            warn!("Prepare rejected: {:?} holds lease", self.current_leader);
+            // TODO: send NACK
             return;
         }
 
@@ -125,9 +125,9 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
         self.leader_lease_start = Instant::now();
         self.flush_to_disk();
 
-        // Fill accepted_values with all values this node has accepted and
-        // the sender of the Prepare has marked as not yet known to be chosen (in holes).
-        let mut accepted_values = Vec::new();
+        // Fill accepted with all values this node has accepted and the sender
+        // of the Prepare has marked as not yet known to be chosen (in holes).
+        let mut accepted = Vec::new();
         for (index, id, value) in self.get_accepted_values_iter() {
             for hole in holes.iter().copied().chain(holes.last().unwrap() + 1..) {
                 if index < hole {
@@ -135,27 +135,25 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
                 } else if hole < index {
                     continue;
                 }
-                accepted_values.push((index, id, value.clone()));
+                accepted.push((index, id, value.clone()));
             }
         }
 
-        let promise = PaxosMsg::Promise {
-            id,
-            accepted: accepted_values,
-        };
+        let promise = PaxosMsg::Promise { id, accepted };
         self.node.send(src, &promise);
     }
 
     /// Responds to a Paxos Promise (1b) message.
     fn handle_promise(&mut self, src: usize, id: Ballot, accepted: Promise<V>) {
         if id != self.highest_promised {
-            warn!("Promise rejected: {:?}!={:?}", id, self.highest_promised);
+            warn!("Promise ignored: {:?}!={:?}", id, self.highest_promised);
             return;
         }
 
         debug!("Got a promise: {:?}, {:?}", id, accepted);
         self.promises.insert(src, (id, accepted));
 
+        // check that we don't count old promises
         for (i, _) in self.promises.values() {
             assert_eq!(*i, self.highest_promised);
         }
@@ -164,6 +162,7 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
             info!("Got elected.");
             self.current_leader = self.node_id;
             self.leader_lease_start = Instant::now();
+
             for (i, index) in (&self.log)
                 .iter()
                 .enumerate()
@@ -182,12 +181,12 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
     /// Responds to a Paxos Propose (2a) message.
     fn handle_propose(&mut self, src: usize, index: usize, id: Ballot, value: V) {
         if id < self.highest_promised {
-            warn!("Proposal rejected: {:?}", value);
+            warn!("Proposal rejected: {:?}<{:?}", id, self.highest_promised);
             self.node.send(src, &PaxosMsg::Nack { index, id });
             return;
         }
 
-        trace!("Proposal accepted: {:?}", value);
+        debug!("Proposal accepted: {:?}", value);
         self.current_leader = src;
         while index >= self.log.len() {
             self.log.push(LogEntry::default());
@@ -200,10 +199,7 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
     /// Responds to a Paxos Accept (2b) message.
     fn handle_accept(&mut self, src: usize, index: usize, id: Ballot) {
         if id != self.highest_promised {
-            warn!(
-                "Accept rejected: [{}] {:?}!={:?}",
-                index, id, self.highest_promised
-            );
+            warn!("Accept rejected: {:?}!={:?}", id, self.highest_promised);
             return;
         } else if self.log[index].acceptances.contains(&src) {
             warn!("Duplicate Accept ignored: [{}] {}", index, src);
@@ -213,8 +209,9 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
         self.log[index].acceptances.push(src);
         if self.log[index].acceptances.len() == self.quorum {
             debug!(
-                "Sending learn with {}/{} acceptances.",
-                self.log[index].acceptances.len(), self.quorum
+                "Sending Learn with {}/{} acceptances.",
+                self.log[index].acceptances.len(),
+                self.quorum
             );
             let value = self.log[index].value.clone().unwrap();
             info!("Value was chosen: [{}] {:?}, {:?}", index, id, value);
@@ -274,7 +271,8 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
             .map(|(id, i, v)| (id, i, v.clone()))
             .collect();
         self.promises.clear();
-        self.promises.insert(self.node_id, (self.highest_promised, accepted_values));
+        self.promises
+            .insert(self.node_id, (self.highest_promised, accepted_values));
 
         let mut holes: Vec<usize> = (&self.log)
             .iter()
@@ -295,6 +293,12 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
     fn flush_to_disk(&self) {
         store_in_disk_file("log.bin", &self.log).unwrap();
         // TODO: flush other relevant information (e.g. highest Ballot)
+    }
+
+    /// Recover this replica's state from what it previously saved to disk.
+    fn recover_from_disk(&mut self) {
+        self.log = load_from_disk_file("log.bin").unwrap();
+        // TODO: load other relevant information (e.g. highest Ballot)
     }
 
     fn get_accepted_values_iter(&self) -> impl Iterator<Item = (usize, Ballot, &V)> {
