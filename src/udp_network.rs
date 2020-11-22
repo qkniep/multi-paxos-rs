@@ -111,4 +111,42 @@ mod tests {
             assert_eq!(UdpNetworkNode::<u32>::node_id_to_addr(UdpNetworkNode::<u32>::addr_to_node_id(addr).unwrap()), addr);
         }
     }
+
+    #[test]
+    fn create_node() {
+        let _node = UdpNetworkNode::<u32>::new();
+    }
+
+    #[test]
+    fn send_and_receive() {
+        let node1 = UdpNetworkNode::<u32>::new();
+        let node2 = UdpNetworkNode::<u32>::new();
+        node1.send(node2.id(), &PaxosMsg::ClientRequest(42));
+        let (recv_id, recv_msg) = node2.recv(Duration::from_secs(1)).unwrap();
+        assert_eq!(recv_id, node1.id());
+        match recv_msg {
+            PaxosMsg::ClientRequest(v) => assert_eq!(v, 42),
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
+    fn discover_and_broadcast() {
+        let mut node1 = UdpNetworkNode::<u32>::new();
+        let node2 = UdpNetworkNode::<u32>::new();
+        let node3 = UdpNetworkNode::<u32>::new();
+        node1.discover(node2.id());
+        node1.discover(node3.id());
+        node1.broadcast(PaxosMsg::ClientRequest(42));
+        let mut received = Vec::new();
+        received.push(node2.recv(Duration::from_secs(1)).unwrap());
+        received.push(node3.recv(Duration::from_secs(1)).unwrap());
+        for (id, msg) in received {
+            assert_eq!(id, node1.id());
+            match msg {
+                PaxosMsg::ClientRequest(v) => assert_eq!(v, 42),
+                _ => unreachable!(),
+            }
+        }
+    }
 }
