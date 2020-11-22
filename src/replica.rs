@@ -1,7 +1,7 @@
 // Copyright (C) 2020 Quentin M. Kniep <hello@quentinkniep.com>
 // Distributed under terms of the MIT license.
 
-//! Contains the PaxosReplica
+//! Contains the PaxosReplica which implements the main Paxos protocol logic.
 
 use std::collections::HashMap;
 use std::fmt::Debug;

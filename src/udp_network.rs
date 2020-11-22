@@ -1,6 +1,8 @@
 // Copyright (C) 2020 Quentin M. Kniep <hello@quentinkniep.com>
 // Distributed under terms of the MIT license.
 
+//! A network implementation that uses UDP and bincode for sending messages.
+
 use std::collections::HashSet;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 use std::time::Duration;
@@ -11,9 +13,8 @@ use rand::prelude::*;
 
 use crate::protocol::PaxosMsg;
 
-const MAX_MSG_SIZE: usize = 64 * 1024;
+const MAX_MSG_SIZE: usize = 64 * 1024; // TODO: we can't usually send 64 KB via UDP, right?
 
-/// A network node that uses UDP and bincode for sending messages.
 #[derive(Debug)]
 pub struct UdpNetworkNode<V> {
     pub socket: UdpSocket,
@@ -42,6 +43,7 @@ impl<V: crate::AppCommand> UdpNetworkNode<V> {
         self.peers.insert(other_node);
     }
 
+    /// Try to receive a new Paxos message from this node's UDP socket.
     /// Blocks until the next message is received.
     /// If this takes longer than timeout an io::Error is returned instead.
     pub fn recv(&self, timeout: Duration) -> io::Result<(usize, PaxosMsg<V>)> {

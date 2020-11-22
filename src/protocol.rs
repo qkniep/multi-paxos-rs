@@ -1,7 +1,7 @@
 // Copyright (C) 2020 Quentin M. Kniep <hello@quentinkniep.com>
 // Distributed under terms of the MIT license.
 
-//! Contains the main algorithm for the Paxos consensus protocol.
+//! Contains structures, types and constants used by the rest of the Paxos implementation.
 
 use std::fmt::Debug;
 
@@ -15,6 +15,9 @@ pub static LEASE_DURATION: u128 = 2000; //2000 ms (= 2 seconds)
 pub struct Ballot(usize, usize);
 
 impl Ballot {
+    /// Changes this Ballot number to be a higher number than before.
+    /// The resulting Ballot number is again in the space of numbers for this peer,
+    /// i.e. no other peer could ever generate the same number.
     pub fn increment_for(&mut self, node_id: usize) {
         if self.1 > node_id {
             self.0 += 1;
@@ -66,10 +69,12 @@ pub enum PaxosMsg<V: Debug> {
 /// Holds the state representing a single slot in the log.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct LogEntry<V> {
+    /// The value this replica currently believes to be the value for this entry.
     pub value: Option<V>,
+    /// The `node_id`s of the replicas that have accepted this entry.
     pub acceptances: Vec<usize>,
     pub accepted_id: Ballot,
-    pub chosen: bool,
+    pub chosen: bool, // TODO: replace with accepted_id==Ballot(INFINITY, INFINITY)?
 }
 
 impl<V> LogEntry<V> {
