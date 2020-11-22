@@ -1,9 +1,10 @@
 # Multi-Paxos replicated log in Rust
 
-[![Build Status](https://img.shields.io/travis/qkniep/multi-paxos-rs?logo=travis)](https://travis-ci.org/qkniep/multi-paxos-rs)
-[![codecov](https://codecov.io/gh/qkniep/multi-paxos-rs/branch/master/graph/badge.svg)](https://codecov.io/gh/qkniep/multi-paxos-rs)
-![LoC](https://tokei.rs/b1/github/qkniep/multi-paxos-rs?category=code)
-![License](https://img.shields.io/github/license/qkniep/multi-paxos-rs)
+[![GH Build Status](https://img.shields.io/github/workflow/status/qkniep/multi-paxos-rs/Rust/main?logo=GitHub&style=for-the-badge&labelColor=222)](https://github.com/qkniep/multi-paxos-rs/actions)
+[![Travis Build Status](https://img.shields.io/travis/qkniep/multi-paxos-rs?logo=Travis&style=for-the-badge&labelColor=222)](https://travis-ci.org/qkniep/multi-paxos-rs)
+[![Test Coverage](https://img.shields.io/codecov/c/github/qkniep/multi-paxos-rs?logo=codecov&style=for-the-badge&labelColor=222)](https://codecov.io/gh/qkniep/multi-paxos-rs)
+![Lines of Code](https://img.shields.io/tokei/lines/github/qkniep/multi-paxos-rs?style=for-the-badge&labelColor=222)
+![License](https://img.shields.io/github/license/qkniep/multi-paxos-rs?style=for-the-badge&labelColor=222)
 
 This is a very basic replicated log using Multi-Paxos implemented in Rust.
 I do the project for fun, it is not intended for production use!
