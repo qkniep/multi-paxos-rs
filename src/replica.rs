@@ -277,7 +277,7 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
         let mut holes: Vec<usize> = (&self.log)
             .iter()
             .enumerate()
-            .filter(|(_, i)| i.chosen == false)
+            .filter(|(_, i)| !i.chosen)
             .map(|(index, _)| index)
             .collect();
         holes.push(self.log.len());

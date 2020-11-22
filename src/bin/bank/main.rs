@@ -42,12 +42,7 @@ impl ReplicatedStateMachine for Bank {
     fn execute(&mut self, action: Self::Command) -> bool {
         match action {
             CustomerAction::Open { account } => {
-                if self.balances.contains_key(&account) {
-                    false
-                } else {
-                    self.balances.insert(account, 0);
-                    true
-                }
+                self.balances.insert(account, 0).is_some()
             }
             CustomerAction::Deposit { account, amount } => {
                 if let Some(balance) = self.balances.get_mut(&account) {
