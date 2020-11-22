@@ -4,13 +4,16 @@
 //! Implementation of a replicated log using the Multi-Paxos consensus protocol.
 
 mod protocol;
+mod replica;
+mod storage;
 mod udp_network;
 
 use std::{fmt::Debug, thread};
 
 use serde::{de::DeserializeOwned, Serialize};
 
-use protocol::{PaxosMsg, PaxosServer};
+use protocol::PaxosMsg;
+use replica::PaxosReplica;
 use udp_network::UdpNetworkNode;
 
 pub trait AppCommand: Clone + Debug + Serialize + DeserializeOwned + Send + 'static {}
@@ -45,7 +48,7 @@ pub fn start_replicas<V: AppCommand>(group_size: usize) -> Vec<usize> {
     for node in nodes {
         let node_id = node.id();
         node_ids.push(node_id);
-        thread::spawn(move || PaxosServer::<V>::new(node, node_id, group_size).run());
+        thread::spawn(move || PaxosReplica::<V>::new(node, node_id, group_size).run());
     }
     node_ids
 }
@@ -53,7 +56,7 @@ pub fn start_replicas<V: AppCommand>(group_size: usize) -> Vec<usize> {
 pub fn start_replica<V: AppCommand>(group_size: usize) -> usize {
     let node = UdpNetworkNode::new();
     let node_id = node.id();
-    thread::spawn(move || PaxosServer::<V>::new(node, node_id, group_size).run());
+    thread::spawn(move || PaxosReplica::<V>::new(node, node_id, group_size).run());
     node_id
 }
 
