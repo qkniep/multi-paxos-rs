@@ -15,6 +15,7 @@ use udp_network::UdpNetworkNode;
 
 pub trait AppCommand: Clone + Debug + Serialize + DeserializeOwned + Send + 'static {}
 impl AppCommand for String {}
+impl AppCommand for u32 {}
 
 pub trait ReplicatedStateMachine {
     type Command: AppCommand;

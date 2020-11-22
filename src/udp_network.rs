@@ -106,7 +106,7 @@ mod tests {
         #[test]
         fn node_id_addr_conversion(ip: u32, port: u16) {
             let addr = SocketAddr::from((Ipv4Addr::from(ip), port));
-            assert_eq!(UdpNetworkNode::<String>::node_id_to_addr(UdpNetworkNode::<String>::addr_to_node_id(addr).unwrap()), addr);
+            assert_eq!(UdpNetworkNode::<u32>::node_id_to_addr(UdpNetworkNode::<u32>::addr_to_node_id(addr).unwrap()), addr);
         }
     }
 }

@@ -318,7 +318,7 @@ impl<V: crate::AppCommand> PaxosServer<V> {
             });
         } else {
             // TODO: is relaying to leader safe? (esp. if our current_leader value is wrong)
-            trace!("Received a client request. Relaying to leader.");
+            trace!("Received a client request, relaying to leader: {:?}", cmd);
             if !self
                 .node
                 .send(self.current_leader, &PaxosMsg::ClientRequest(cmd.clone()))
