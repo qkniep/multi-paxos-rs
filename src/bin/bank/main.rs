@@ -41,24 +41,22 @@ impl ReplicatedStateMachine for Bank {
 
     fn execute(&mut self, action: Self::Command) -> bool {
         match action {
-            CustomerAction::Open { account } => {
-                self.balances.insert(account, 0).is_some()
-            }
+            CustomerAction::Open { account } => self.balances.insert(account, 0).is_some(),
             CustomerAction::Deposit { account, amount } => {
-                if let Some(balance) = self.balances.get_mut(&account) {
-                    *balance += amount;
-                    true
-                } else {
-                    false
-                }
+                self.balances
+                    .get_mut(&account)
+                    .map_or(false, |balance| {
+                        *balance += amount;
+                        true
+                    })
             }
             CustomerAction::Withdraw { account, amount } => {
-                if let Some(balance) = self.balances.get_mut(&account) {
-                    *balance -= amount;
-                    true
-                } else {
-                    false
-                }
+                self.balances
+                    .get_mut(&account)
+                    .map_or(false, |balance| {
+                        *balance -= amount;
+                        true
+                    })
             }
             CustomerAction::Transfer { src, dst, amount } => {
                 if self.balances.contains_key(&src) && self.balances.contains_key(&dst) {
