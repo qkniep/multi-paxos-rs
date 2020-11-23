@@ -11,7 +11,7 @@ use rand::{thread_rng, Rng};
 use tracing::{debug, error, info, info_span, trace, warn};
 
 use crate::protocol::{Ballot, LogEntry, PaxosMsg, Promise, LEASE_DURATION};
-use crate::storage::*;
+use crate::storage::{load_from_disk_file, store_in_disk_file};
 use crate::udp_network::UdpNetworkNode;
 
 /// Handles all Paxos related state for a single node, acting as proposer, acceptor and learner.
@@ -169,7 +169,7 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
                 .filter(|(_, index)| !index.chosen)
             {
                 // TODO: do not choose own value if any is present in a promise
-                self.node.broadcast(PaxosMsg::Propose {
+                self.node.broadcast(&PaxosMsg::Propose {
                     index: i,
                     id,
                     value: index.value.as_ref().unwrap().clone(),
@@ -215,7 +215,7 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
             );
             let value = self.log[index].value.clone().unwrap();
             info!("Value was chosen: [{}] {:?}, {:?}", index, id, value);
-            self.node.broadcast(PaxosMsg::Learn { index, id, value });
+            self.node.broadcast(&PaxosMsg::Learn { index, id, value });
             self.log[index].chosen = true;
         }
     }
@@ -245,7 +245,7 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
             debug!("Handling client request: {:?}", cmd);
             let value = cmd;
             self.log.push(LogEntry::new(value.clone()));
-            self.node.broadcast(PaxosMsg::Propose {
+            self.node.broadcast(&PaxosMsg::Propose {
                 index: self.log.len() - 1,
                 id: self.highest_promised,
                 value,
@@ -283,7 +283,7 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
         holes.push(self.log.len());
         debug!("Missing values: {:?}", holes);
 
-        self.node.broadcast(PaxosMsg::Prepare {
+        self.node.broadcast(&PaxosMsg::Prepare {
             id: self.highest_promised,
             holes,
         });

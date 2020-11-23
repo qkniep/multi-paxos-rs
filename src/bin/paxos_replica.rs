@@ -24,5 +24,5 @@ fn main() {
 
     paxos::start_replica::<String>(group_size);
 
-    loop {}
+    unimplemented!();
 }

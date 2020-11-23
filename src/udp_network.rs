@@ -45,7 +45,7 @@ impl<V: crate::AppCommand> UdpNetworkNode<V> {
 
     /// Try to receive a new Paxos message from this node's UDP socket.
     /// Blocks until the next message is received.
-    /// If this takes longer than timeout an io::Error is returned instead.
+    /// If this takes longer than timeout an `io::Error` is returned instead.
     pub fn recv(&self, timeout: Duration) -> io::Result<(usize, PaxosMsg<V>)> {
         self.socket
             .set_read_timeout(Some(timeout))
@@ -59,9 +59,9 @@ impl<V: crate::AppCommand> UdpNetworkNode<V> {
     }
 
     /// Sends the Paxos message to all other replicas.
-    pub fn broadcast(&self, cmd: PaxosMsg<V>) {
+    pub fn broadcast(&self, cmd: &PaxosMsg<V>) {
         for addr in self.peers.clone() {
-            self.send(addr, &cmd);
+            self.send(addr, cmd);
         }
     }
 
@@ -137,7 +137,7 @@ mod tests {
         let node3 = UdpNetworkNode::<u32>::new();
         node1.discover(node2.id());
         node1.discover(node3.id());
-        node1.broadcast(PaxosMsg::ClientRequest(42));
+        node1.broadcast(&PaxosMsg::ClientRequest(42));
         let mut received = Vec::new();
         received.push(node2.recv(Duration::from_secs(1)).unwrap());
         received.push(node3.recv(Duration::from_secs(1)).unwrap());

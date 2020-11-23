@@ -74,7 +74,7 @@ mod tests {
         #![proptest_config(ProptestConfig::with_cases(25))]
 
         #[test]
-        fn random_start_replica_test(group_size in 1..50usize) {
+        fn random_start_replica_test(group_size in 1..50_usize) {
             start_replicas::<String>(group_size);
         }
         #[test]
