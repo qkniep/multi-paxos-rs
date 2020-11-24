@@ -151,6 +151,7 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
         }
 
         debug!("Got a promise: {:?}, {:?}", id, accepted);
+        // TODO: do not overwrite newer promises (out of order messages)
         self.promises.insert(src, (id, accepted));
 
         // check that we don't count old promises
@@ -163,16 +164,32 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
             self.current_leader = self.node_id;
             self.leader_lease_start = Instant::now();
 
-            for (i, index) in (&self.log)
+            // adapt values in log based on accepted values in received Promise messages
+            for (_, accepted_values) in self.promises.values() {
+                for (index, ballot, value) in accepted_values {
+                    if self.log[*index].accepted_id < *ballot {
+                        trace!(
+                            "Using value from Promise: [{}] {:?}, {:?}",
+                            *index,
+                            *ballot,
+                            value
+                        );
+                        self.log[*index].value = Some(value.clone());
+                    }
+                }
+            }
+
+            // send Propose messages for not yet chosen log entries
+            for (i, entry) in self
+                .log
                 .iter()
                 .enumerate()
-                .filter(|(_, index)| !index.chosen)
+                .filter(|(_, entry)| !entry.chosen)
             {
-                // TODO: do not choose own value if any is present in a promise
                 self.node.broadcast(&PaxosMsg::Propose {
                     index: i,
                     id,
-                    value: index.value.as_ref().unwrap().clone(),
+                    value: entry.value.clone().unwrap(),
                 });
             }
         }

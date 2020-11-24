@@ -26,26 +26,31 @@ impl Ballot {
     }
 }
 
+/// Represents a preliminary log entry as (index, ballot, value).
 type PValue<V> = (usize, Ballot, V);
 pub type Promise<V> = Vec<PValue<V>>;
 
 /// Internal messages for the Paxos protocol.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum PaxosMsg<V: Debug> {
+    /// Paxos phase 1a message
     Prepare {
         id: Ballot,
         holes: Vec<usize>,
     },
+    /// Paxos phase 1b message
     Promise {
         id: Ballot,
         accepted: Promise<V>,
     },
 
+    /// Paxos phase 2a message
     Propose {
         index: usize,
         id: Ballot,
         value: V,
     },
+    /// Paxos phase 2b message
     Accept {
         index: usize,
         id: Ballot,
@@ -89,6 +94,8 @@ impl<V> LogEntry<V> {
 }
 
 impl<V> Default for LogEntry<V> {
+    /// Create a completely empty entry for the log.
+    /// This can be used at indices for which we have received no Propose message yet.
     fn default() -> Self {
         Self {
             value: None,
