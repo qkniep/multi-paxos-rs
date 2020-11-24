@@ -93,21 +93,22 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
     fn handle_paxos_message(&mut self, src: usize, cmd: PaxosMsg<V>) {
         trace!("Received a message from {}: {:?}", src, cmd);
         match cmd {
-            PaxosMsg::Prepare { id, holes } => self.handle_prepare(src, id, holes),
-            PaxosMsg::Promise { id, accepted } => self.handle_promise(src, id, accepted),
-            PaxosMsg::Propose { index, id, value } => self.handle_propose(src, index, id, value),
-            PaxosMsg::Accept { index, id } => self.handle_accept(src, index, id),
-            PaxosMsg::Learn { index, id, value } => self.handle_learn(index, id, value),
-            PaxosMsg::Nack { index, id } => self.handle_nack(index, id),
+            PaxosMsg::Prepare { ballot, holes } => self.handle_prepare(src, ballot, holes),
+            PaxosMsg::Promise { ballot, accepted } => self.handle_promise(src, ballot, accepted),
+            PaxosMsg::Propose { index, ballot, value } => self.handle_propose(src, index, ballot, value),
+            PaxosMsg::Accept { index, ballot } => self.handle_accept(src, index, ballot),
+            PaxosMsg::Learn { index, ballot, value } => self.handle_learn(index, ballot, value),
+            PaxosMsg::Nack { index, ballot } => self.handle_nack(index, ballot),
             PaxosMsg::ClientRequest(value) => self.handle_client_request(value),
         }
     }
 
     /// Responds to a Paxos Prepare (1a) message.
-    /// Sends a Promise back to the sender iff this node has not made Promise for a higher id yet.
-    fn handle_prepare(&mut self, src: usize, id: Ballot, holes: Vec<usize>) {
-        if id < self.highest_promised {
-            warn!("Prepare rejected: {:?}<{:?}", id, self.highest_promised);
+    /// Sends a Promise back to the sender iff this node has not made Promise for a higher ballot
+    /// number yet.
+    fn handle_prepare(&mut self, src: usize, ballot: Ballot, holes: Vec<usize>) {
+        if ballot < self.highest_promised {
+            warn!("Prepare rejected: {:?}<{:?}", ballot, self.highest_promised);
             // TODO: send NACK
             return;
         } else if self.leader_lease_start.elapsed().as_millis() < LEASE_DURATION
@@ -118,8 +119,8 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
             return;
         }
 
-        debug!("Promise vote: {:?}", id);
-        self.highest_promised = id;
+        debug!("Promise vote: {:?}", ballot);
+        self.highest_promised = ballot;
         self.promises.clear();
         self.current_leader = src;
         self.leader_lease_start = Instant::now();
@@ -128,31 +129,31 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
         // Fill accepted with all values this node has accepted and the sender
         // of the Prepare has marked as not yet known to be chosen (in holes).
         let mut accepted = Vec::new();
-        for (index, id, value) in self.get_accepted_values_iter() {
+        for (index, ballot, value) in self.get_accepted_values_iter() {
             for hole in holes.iter().copied().chain(holes.last().unwrap() + 1..) {
                 if index < hole {
                     break;
                 } else if hole < index {
                     continue;
                 }
-                accepted.push((index, id, value.clone()));
+                accepted.push((index, ballot, value.clone()));
             }
         }
 
-        let promise = PaxosMsg::Promise { id, accepted };
+        let promise = PaxosMsg::Promise { ballot, accepted };
         self.node.send(src, &promise);
     }
 
     /// Responds to a Paxos Promise (1b) message.
-    fn handle_promise(&mut self, src: usize, id: Ballot, accepted: Promise<V>) {
-        if id != self.highest_promised {
-            warn!("Promise ignored: {:?}!={:?}", id, self.highest_promised);
+    fn handle_promise(&mut self, src: usize, ballot: Ballot, accepted: Promise<V>) {
+        if ballot != self.highest_promised {
+            warn!("Promise ignored: {:?}!={:?}", ballot, self.highest_promised);
             return;
         }
 
-        debug!("Got a promise: {:?}, {:?}", id, accepted);
+        debug!("Got a promise: {:?}, {:?}", ballot, accepted);
         // TODO: do not overwrite newer promises (out of order messages)
-        self.promises.insert(src, (id, accepted));
+        self.promises.insert(src, (ballot, accepted));
 
         // check that we don't count old promises
         for (i, _) in self.promises.values() {
@@ -167,7 +168,7 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
             // adapt values in log based on accepted values in received Promise messages
             for (_, accepted_values) in self.promises.values() {
                 for (index, ballot, value) in accepted_values {
-                    if self.log[*index].accepted_id < *ballot {
+                    if self.log[*index].accepted_ballot < *ballot {
                         trace!(
                             "Using value from Promise: [{}] {:?}, {:?}",
                             *index,
@@ -188,7 +189,7 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
             {
                 self.node.broadcast(&PaxosMsg::Propose {
                     index: i,
-                    id,
+                    ballot,
                     value: entry.value.clone().unwrap(),
                 });
             }
@@ -196,10 +197,10 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
     }
 
     /// Responds to a Paxos Propose (2a) message.
-    fn handle_propose(&mut self, src: usize, index: usize, id: Ballot, value: V) {
-        if id < self.highest_promised {
-            warn!("Proposal rejected: {:?}<{:?}", id, self.highest_promised);
-            self.node.send(src, &PaxosMsg::Nack { index, id });
+    fn handle_propose(&mut self, src: usize, index: usize, ballot: Ballot, value: V) {
+        if ballot < self.highest_promised {
+            warn!("Proposal rejected: {:?}<{:?}", ballot, self.highest_promised);
+            self.node.send(src, &PaxosMsg::Nack { index, ballot });
             return;
         }
 
@@ -208,15 +209,15 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
         while index >= self.log.len() {
             self.log.push(LogEntry::default());
         }
-        self.node.send(src, &PaxosMsg::Accept { index, id });
+        self.node.send(src, &PaxosMsg::Accept { index, ballot });
         self.log[index].value = Some(value);
-        self.log[index].accepted_id = id;
+        self.log[index].accepted_ballot = ballot;
     }
 
     /// Responds to a Paxos Accept (2b) message.
-    fn handle_accept(&mut self, src: usize, index: usize, id: Ballot) {
-        if id != self.highest_promised {
-            warn!("Accept rejected: {:?}!={:?}", id, self.highest_promised);
+    fn handle_accept(&mut self, src: usize, index: usize, ballot: Ballot) {
+        if ballot != self.highest_promised {
+            warn!("Accept rejected: {:?}!={:?}", ballot, self.highest_promised);
             return;
         } else if self.log[index].acceptances.contains(&src) {
             warn!("Duplicate Accept ignored: [{}] {}", index, src);
@@ -231,28 +232,28 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
                 self.quorum
             );
             let value = self.log[index].value.clone().unwrap();
-            info!("Value was chosen: [{}] {:?}, {:?}", index, id, value);
-            self.node.broadcast(&PaxosMsg::Learn { index, id, value });
+            info!("Value was chosen: [{}] {:?}, {:?}", index, ballot, value);
+            self.node.broadcast(&PaxosMsg::Learn { index, ballot, value });
             self.log[index].chosen = true;
         }
     }
 
     /// Handles a Learn message.
-    fn handle_learn(&mut self, index: usize, id: Ballot, value: V) {
-        info!("Learned: [{}] {:?}, {:?}", index, id, value);
+    fn handle_learn(&mut self, index: usize, ballot: Ballot, value: V) {
+        info!("Learned: [{}] {:?}, {:?}", index, ballot, value);
         while index >= self.log.len() {
             self.log.push(LogEntry::default());
         }
         self.log[index].value = Some(value);
-        self.log[index].accepted_id = id;
+        self.log[index].accepted_ballot = ballot;
         self.log[index].chosen = true;
         self.flush_to_disk();
     }
 
     /// Handles a negative acknowledgement message.
-    fn handle_nack(&mut self, index: usize, id: Ballot) {
+    fn handle_nack(&mut self, index: usize, ballot: Ballot) {
         warn!("Received a NACK.");
-        // TODO: clean state for request #id
+        // TODO: clean state for request
     }
 
     /// Handles a client request directly if this replica believes itself to be the leader.
@@ -264,7 +265,7 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
             self.log.push(LogEntry::new(value.clone()));
             self.node.broadcast(&PaxosMsg::Propose {
                 index: self.log.len() - 1,
-                id: self.highest_promised,
+                ballot: self.highest_promised,
                 value,
             });
         } else {
@@ -285,7 +286,7 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
         self.highest_promised.increment_for(self.node_id);
         let accepted_values = self
             .get_accepted_values_iter()
-            .map(|(id, i, v)| (id, i, v.clone()))
+            .map(|(index, ballot, value)| (index, ballot, value.clone()))
             .collect();
         self.promises.clear();
         self.promises
@@ -294,14 +295,14 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
         let mut holes: Vec<usize> = (&self.log)
             .iter()
             .enumerate()
-            .filter(|(_, i)| !i.chosen)
+            .filter(|(_, entry)| !entry.chosen)
             .map(|(index, _)| index)
             .collect();
         holes.push(self.log.len());
         debug!("Missing values: {:?}", holes);
 
         self.node.broadcast(&PaxosMsg::Prepare {
-            id: self.highest_promised,
+            ballot: self.highest_promised,
             holes,
         });
     }
@@ -323,6 +324,6 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
             .iter()
             .enumerate()
             .filter(|(_, i)| i.value.is_some())
-            .map(|(index, entry)| (index, entry.accepted_id, entry.value.as_ref().unwrap()))
+            .map(|(index, entry)| (index, entry.accepted_ballot, entry.value.as_ref().unwrap()))
     }
 }

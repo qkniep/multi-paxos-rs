@@ -35,37 +35,37 @@ pub type Promise<V> = Vec<PValue<V>>;
 pub enum PaxosMsg<V: Debug> {
     /// Paxos phase 1a message
     Prepare {
-        id: Ballot,
+        ballot: Ballot,
         holes: Vec<usize>,
     },
     /// Paxos phase 1b message
     Promise {
-        id: Ballot,
+        ballot: Ballot,
         accepted: Promise<V>,
     },
 
     /// Paxos phase 2a message
     Propose {
         index: usize,
-        id: Ballot,
+        ballot: Ballot,
         value: V,
     },
     /// Paxos phase 2b message
     Accept {
         index: usize,
-        id: Ballot,
+        ballot: Ballot,
     },
 
     Learn {
         index: usize,
-        id: Ballot,
+        ballot: Ballot,
         value: V,
     },
 
     /// Currently only used for rejecting Proposals.
     Nack {
         index: usize,
-        id: Ballot,
+        ballot: Ballot,
     },
 
     ClientRequest(V),
@@ -78,7 +78,7 @@ pub struct LogEntry<V> {
     pub value: Option<V>,
     /// The `node_id`s of the replicas that have accepted this entry.
     pub acceptances: Vec<usize>,
-    pub accepted_id: Ballot,
+    pub accepted_ballot: Ballot,
     pub chosen: bool, // TODO: replace with accepted_id==Ballot(INFINITY, INFINITY)?
 }
 
@@ -87,7 +87,7 @@ impl<V> LogEntry<V> {
         Self {
             value: Some(value),
             acceptances: vec![0], // TODO: actually place own ID here, or don't count it alltogether
-            accepted_id: Ballot(0, 0),
+            accepted_ballot: Ballot(0, 0),
             chosen: false,
         }
     }
@@ -100,7 +100,7 @@ impl<V> Default for LogEntry<V> {
         Self {
             value: None,
             acceptances: Vec::new(),
-            accepted_id: Ballot(0, 0),
+            accepted_ballot: Ballot(0, 0),
             chosen: false,
         }
     }
