@@ -106,8 +106,8 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
     }
 
     /// Responds to a Paxos Prepare (1a) message.
-    /// Sends a Promise back to the sender iff this node has not made Promise for a higher ballot
-    /// number yet.
+    /// Sends a Promise back to the sender iff this node has not yet made a Promise for a higher
+    /// ballot number.
     fn handle_prepare(&mut self, src: usize, ballot: Ballot, holes: Vec<usize>) {
         if ballot < self.highest_promised {
             warn!("Prepare rejected: {:?}<{:?}", ballot, self.highest_promised);
@@ -128,8 +128,8 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
         self.leader_lease_start = Instant::now();
         self.flush_to_disk();
 
-        // Fill accepted with all values this node has accepted and the sender
-        // of the Prepare has marked as not yet known to be chosen (in holes).
+        // Fill `accepted` with all values this node has accepted and the sender
+        // of the Prepare has marked as not yet known to be chosen (in `holes`).
         let mut accepted = Vec::new();
         for (index, ballot, value) in self.get_accepted_values_iter() {
             for hole in holes.iter().copied().chain(holes.last().unwrap() + 1..) {

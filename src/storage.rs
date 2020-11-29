@@ -26,8 +26,6 @@ pub fn store_in_disk_file<T: ?Sized + Serialize>(filename: &str, value: &T) -> R
 pub fn load_from_disk_file<T: DeserializeOwned>(filename: &str) -> Result<T, ()> {
     let storage = std::fs::OpenOptions::new()
         .read(true)
-        .write(true)
-        .create(true)
         .open(filename)
         .map_err(|e| {
             error!("Failed to create or open file: {:?}", e);

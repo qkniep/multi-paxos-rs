@@ -13,7 +13,6 @@ categories = ["algorithms", "database-implementations"]
 
 [dependencies]
 bincode = "1"
-clap = "2"
 rand = "0.7"
 rand_distr = "0.3"
 serde = { version = "1", features = ["derive"] }
@@ -27,7 +26,6 @@ features = ["fmt", "ansi", "chrono"]
 [dev-dependencies]
 criterion = "0.3"
 proptest = "0.10"
-stateright = "0.18"
 
 [[bench]]
 name = "main"
