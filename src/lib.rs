@@ -13,8 +13,8 @@ use std::{fmt::Debug, thread};
 use serde::{de::DeserializeOwned, Serialize};
 
 use protocol::PaxosMsg;
-use replica::PaxosReplica;
-use udp_network::UdpNetworkNode;
+pub use replica::PaxosReplica;
+pub use udp_network::UdpNetworkNode;
 
 pub trait AppCommand: Clone + Debug + Serialize + DeserializeOwned + Send + 'static {}
 impl AppCommand for String {}
@@ -23,40 +23,18 @@ impl AppCommand for u32 {}
 pub trait ReplicatedStateMachine {
     type Command: AppCommand;
 
-    fn execute(&mut self, v: Self::Command) -> bool;
-}
-
-/// Start a set of testing replicas, all running on localhost and connected to each other.
-pub fn start_replicas<V: AppCommand>(group_size: usize) -> Vec<usize> {
-    // create the network nodes
-    let mut nodes = Vec::new();
-    for _ in 0..group_size {
-        nodes.push(UdpNetworkNode::<V>::new());
-    }
-    // make every node know about everyone else
-    for node_a in 0..group_size {
-        for node_b in 0..group_size {
-            if node_a == node_b {
-                continue;
-            }
-            let node_b_id = nodes[node_b].id();
-            nodes[node_a].discover(node_b_id);
-        }
-    }
-    // return a Vec of all Paxos IDs
-    let mut node_ids = Vec::new();
-    for node in nodes {
-        let node_id = node.id();
-        node_ids.push(node_id);
-        thread::spawn(move || PaxosReplica::<V>::new(node, node_id, group_size).run());
-    }
-    node_ids
+    fn execute(&mut self, v: Self::Command) -> Result<String, ()>;
 }
 
 pub fn start_replica<V: AppCommand>(group_size: usize) -> usize {
     let node = UdpNetworkNode::new();
     let node_id = node.id();
-    thread::spawn(move || PaxosReplica::<V>::new(node, node_id, group_size).run());
+    let mut replica = PaxosReplica::<V>::new(node, node_id, group_size);
+    thread::spawn(move || {
+        loop {
+            replica.tick();
+        }
+    });
     node_id
 }
 
@@ -70,13 +48,31 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
 
+    /// Start a set of testing replicas, all running on localhost and connected to each other.
+    pub fn start_replicas<V: AppCommand>(group_size: usize) -> Vec<usize> {
+        // create the network nodes
+        let mut nodes = Vec::new();
+        for _ in 0..group_size {
+            nodes.push(UdpNetworkNode::<V>::new());
+        }
+        // start the replicas and make them know about everyone else
+        let node_ids = nodes.iter().map(|n| n.id()).collect();
+        for mut node in nodes {
+            node.discover(&node_ids);
+            let node_id = node.id();
+            let mut replica = PaxosReplica::<V>::new(node, node_id, group_size);
+            thread::spawn(move || {
+                loop {
+                    replica.tick();
+                }
+            });
+        }
+        node_ids
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(25))]
 
-        #[test]
-        fn random_start_replica_test(group_size in 1..50_usize) {
-            start_replicas::<String>(group_size);
-        }
         #[test]
         fn submit_random_value_test(s in "\\PC*{1,128}") {
             let nodes = start_replicas::<String>(3);
@@ -84,11 +80,6 @@ mod tests {
             submit_value(nodes[0], s);
             thread::sleep(std::time::Duration::new(1, 0));
         }
-    }
-
-    #[test]
-    fn start_replicas_test() {
-        start_replicas::<String>(3);
     }
 
     #[test]

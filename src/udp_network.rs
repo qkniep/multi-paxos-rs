@@ -39,8 +39,13 @@ impl<V: crate::AppCommand> UdpNetworkNode<V> {
     }
 
     /// Adds another peer's ID to this node's list of known peers.
-    pub fn discover(&mut self, other_node: usize) {
-        self.peers.insert(other_node);
+    pub fn discover(&mut self, other_nodes: &Vec<usize>) {
+        for node in other_nodes {
+            if *node == self.id() {
+                continue;
+            }
+            self.peers.insert(*node);
+        }
     }
 
     /// Try to receive a new Paxos message from this node's UDP socket.
@@ -135,8 +140,8 @@ mod tests {
         let mut node1 = UdpNetworkNode::<u32>::new();
         let node2 = UdpNetworkNode::<u32>::new();
         let node3 = UdpNetworkNode::<u32>::new();
-        node1.discover(node2.id());
-        node1.discover(node3.id());
+        node1.discover(&vec![node2.id()]);
+        node1.discover(&vec![node3.id()]);
         node1.broadcast(&PaxosMsg::ClientRequest(42));
         let mut received = Vec::new();
         received.push(node2.recv(Duration::from_secs(1)).unwrap());

@@ -8,7 +8,7 @@ use std::fmt::Debug;
 use std::time::{Duration, Instant};
 
 use rand::{thread_rng, Rng};
-use tracing::{debug, error, info, info_span, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::protocol::{Ballot, LogEntry, PaxosMsg, Promise, LEASE_DURATION};
 use crate::storage::{load_from_disk_file, store_in_disk_file};
@@ -62,33 +62,31 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
         }
     }
 
-    /// Runs this Paxos replica's main loop.
-    pub fn run(&mut self) {
-        // configure a span to associate tracing output with this network node
-        let tracing_span = info_span!("Replica", id = self.node_id);
-        let _guard = tracing_span.enter();
-        info!("Starting Paxos Replica with ID {}", self.node_id);
-
-        loop {
-            // event loop for incoming messages
-            while let Ok(msg) = self.node.recv(Duration::from_millis(100)) {
-                let (src, cmd) = msg;
-                self.handle_paxos_message(src, cmd);
-            }
-
-            // detect leader timeout or try to prolong our own lease
-            if self.leader_lease_start.elapsed().as_millis()
-                >= LEASE_DURATION + self.random_timeout_offset.as_millis()
-            {
-                warn!("Leader's lease timed out: Starting election.");
-                self.start_election();
-            } else if self.leader_lease_start.elapsed().as_millis() >= LEASE_DURATION / 2
-                && self.node_id == self.current_leader
-            {
-                info!("Extending my lease: Starting election.");
-                self.start_election();
-            }
+    /// Runs a single iteration of this Paxos replica's main loop.
+    pub fn tick(&mut self) {
+        // event loop for incoming messages
+        while let Ok(msg) = self.node.recv(Duration::from_millis(10)) {
+            let (src, cmd) = msg;
+            self.handle_paxos_message(src, cmd);
         }
+
+        // detect leader timeout or try to extend our own lease
+        if self.leader_lease_start.elapsed().as_millis()
+            >= LEASE_DURATION + self.random_timeout_offset.as_millis()
+        {
+            warn!("Leader's lease timed out: Starting election.");
+            self.start_election();
+        } else if self.leader_lease_start.elapsed().as_millis() >= LEASE_DURATION / 2
+            && self.node_id == self.current_leader
+        {
+            info!("Extending my lease: Starting election.");
+            self.start_election();
+        }
+    }
+
+    /// The value is treated as a `ClientRequest` and handled accordingly.
+    pub fn submit_value(&mut self, value: V) {
+        self.handle_paxos_message(0, PaxosMsg::ClientRequest(value));
     }
 
     /// Parses the message and calls the method corresponding to the message type.
