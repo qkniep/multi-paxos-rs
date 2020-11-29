@@ -62,9 +62,8 @@ pub enum PaxosMsg<V: Debug> {
         value: V,
     },
 
-    /// Currently only used for rejecting Proposals.
+    /// This message is sent when a Prepare/Propose request is rejected due to a higher Ballot.
     Nack {
-        index: usize,
         ballot: Ballot,
     },
 

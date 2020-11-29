@@ -16,12 +16,13 @@ TBA, the API is not fixed yet.
 # Roadmap
 
 - [x] master leases
+- [ ] handle NACKs
 - [ ] persistent storage of log
 - [ ] full disclosure
 - [ ] specify library API
 - [ ] random failure testing
 - [ ] liveness recovery after failures testing
-- [ ] handle NACKs
+- [ ] handle read-only queries locally on leader
 - [ ] group membership changes
 - [ ] snapshots
 - [ ] benchmarking

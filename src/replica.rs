@@ -14,7 +14,7 @@ use crate::protocol::{Ballot, LogEntry, PaxosMsg, Promise, LEASE_DURATION};
 use crate::storage::{load_from_disk_file, store_in_disk_file};
 use crate::udp_network::UdpNetworkNode;
 
-/// Handles all Paxos related state for a single node, acting as proposer, acceptor and learner.
+/// Handles all Paxos related state for a single replica, acting as proposer, acceptor and learner.
 #[derive(Debug)]
 pub struct PaxosReplica<V: Debug> {
     node_id: usize,
@@ -25,6 +25,8 @@ pub struct PaxosReplica<V: Debug> {
     quorum: usize,
     // TODO: replace with Option<usize> to support the initial state w/o a leader
     current_leader: usize,
+    /// Point in time when the leader last refreshed his lease with this node.
+    /// This happens when the leader is first elected and also upon proposing values.
     leader_lease_start: Instant,
     random_timeout_offset: Duration,
     /// Always holds the highest Ballot number seen so far,
@@ -39,7 +41,7 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
     /// # Arguments
     ///
     /// * `node` - The network node used for sending messages to other Paxos replicas.
-    /// * `node_id` - A unique number identifying this Paxos replicas.
+    /// * `node_id` - A unique number identifying this Paxos replica.
     /// * `node_count` - The number of Paxos replicas operating in this network.
     ///
     /// # Remarks
@@ -98,7 +100,7 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
             PaxosMsg::Propose { index, ballot, value } => self.handle_propose(src, index, ballot, value),
             PaxosMsg::Accept { index, ballot } => self.handle_accept(src, index, ballot),
             PaxosMsg::Learn { index, ballot, value } => self.handle_learn(index, ballot, value),
-            PaxosMsg::Nack { index, ballot } => self.handle_nack(index, ballot),
+            PaxosMsg::Nack { ballot } => self.handle_nack(ballot),
             PaxosMsg::ClientRequest(value) => self.handle_client_request(value),
         }
     }
@@ -109,13 +111,13 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
     fn handle_prepare(&mut self, src: usize, ballot: Ballot, holes: Vec<usize>) {
         if ballot < self.highest_promised {
             warn!("Prepare rejected: {:?}<{:?}", ballot, self.highest_promised);
-            // TODO: send NACK
+            self.node.send(src, &PaxosMsg::Nack { ballot });
             return;
         } else if self.leader_lease_start.elapsed().as_millis() < LEASE_DURATION
             && src != self.current_leader
         {
             warn!("Prepare rejected: {:?} holds lease", self.current_leader);
-            // TODO: send NACK
+            self.node.send(src, &PaxosMsg::Nack { ballot });
             return;
         }
 
@@ -199,12 +201,12 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
     /// Responds to a Paxos Propose (2a) message.
     fn handle_propose(&mut self, src: usize, index: usize, ballot: Ballot, value: V) {
         if ballot < self.highest_promised {
-            warn!("Proposal rejected: {:?}<{:?}", ballot, self.highest_promised);
-            self.node.send(src, &PaxosMsg::Nack { index, ballot });
+            warn!("Propose rejected: {:?}<{:?}", ballot, self.highest_promised);
+            self.node.send(src, &PaxosMsg::Nack { ballot });
             return;
         }
 
-        debug!("Proposal accepted: {:?}", value);
+        debug!("Propose accepted: {:?}", value);
         self.current_leader = src;
         while index >= self.log.len() {
             self.log.push(LogEntry::default());
@@ -251,8 +253,9 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
     }
 
     /// Handles a negative acknowledgement message.
-    fn handle_nack(&mut self, index: usize, ballot: Ballot) {
+    fn handle_nack(&mut self, ballot: Ballot) {
         warn!("Received a NACK.");
+        self.random_timeout_offset = 2 * Duration::from_millis(thread_rng().gen_range(100, 200));
         // TODO: clean state for request
     }
 
@@ -292,6 +295,7 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
         self.promises
             .insert(self.node_id, (self.highest_promised, accepted_values));
 
+        // create a list of all values we are still missing in our log
         let mut holes: Vec<usize> = (&self.log)
             .iter()
             .enumerate()
