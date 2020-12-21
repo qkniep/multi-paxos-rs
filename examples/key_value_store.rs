@@ -56,7 +56,7 @@ pub fn start_kv_stores(group_size: usize) {
             // main loop
             loop {
                 replica.tick();
-                if thread_rng().gen_range(0, 500) == 0 {
+                if thread_rng().gen_range(0..=500) == 0 {
                     replica.submit_value(Operation::Put {
                         key: "Hello".to_string(),
                         value: "World".to_string(),
