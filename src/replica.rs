@@ -56,7 +56,7 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
             quorum: node_count / 2 + 1,
             current_leader: 0,
             leader_lease_start: Instant::now(),
-            random_timeout_offset: Duration::from_millis(thread_rng().gen_range(100, 200)),
+            random_timeout_offset: Duration::from_millis(thread_rng().gen_range(100..=200)),
             highest_promised: Ballot::default(),
             promises: HashMap::new(),
         }
@@ -253,7 +253,7 @@ impl<V: crate::AppCommand> PaxosReplica<V> {
     /// Handles a negative acknowledgement message.
     fn handle_nack(&mut self, ballot: Ballot) {
         warn!("Received a NACK.");
-        self.random_timeout_offset = 2 * Duration::from_millis(thread_rng().gen_range(100, 200));
+        self.random_timeout_offset = 2 * Duration::from_millis(thread_rng().gen_range(100..=200));
         // TODO: clean state for request
     }
 

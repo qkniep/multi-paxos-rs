@@ -27,7 +27,7 @@ impl<V: crate::AppCommand> UdpNetworkNode<V> {
     pub fn new() -> Self {
         // loop until we find an unused port
         loop {
-            let port = rand::thread_rng().gen_range(1024, 65535);
+            let port = rand::thread_rng().gen_range(1024..=65535);
             if let Ok(socket) = UdpSocket::bind(("127.0.0.1", port)) {
                 return Self {
                     socket,
