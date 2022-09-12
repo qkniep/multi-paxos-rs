@@ -24,7 +24,7 @@ default-features = false
 features = ["fmt", "ansi", "chrono"]
 
 [dev-dependencies]
-criterion = "0.3"
+criterion = "0.4"
 proptest = "1.0"
 
 [[bench]]
